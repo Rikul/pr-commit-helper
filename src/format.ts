@@ -72,6 +72,11 @@ export function formatSummary(s: SummaryInput): string {
         `- ${ICONS[f.severity]} **${f.title}** — \`${f.path}:${f.line}\` ${findingMarker(f.fingerprint)}`,
         `  ${f.body.trim().replace(/\n/g, '\n  ')}`,
       );
+      if (f.suggestion !== undefined && f.suggestion !== null) {
+        const code = f.suggestion.replace(/\n$/, '');
+        const fe = fence(code);
+        lines.push('', `  Suggested change:`, `  ${fe}`, ...code.split('\n').map((l) => `  ${l}`), `  ${fe}`);
+      }
     }
     lines.push('', '</details>');
   }

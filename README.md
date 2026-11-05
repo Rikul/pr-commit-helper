@@ -23,6 +23,11 @@ permissions:
   contents: read
   pull-requests: write
 
+# One review at a time per PR; a newer push cancels the older run.
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
     runs-on: ubuntu-latest
@@ -31,6 +36,8 @@ jobs:
         with:
           api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
+
+Keep the `concurrency` block: two runs on the same PR at once can both post the same findings.
 
 That's it. The next PR gets a review from `claude-opus-5-5` at `medium` effort.
 
@@ -101,7 +108,7 @@ That's it. The next PR gets a review from `claude-opus-5-5` at `medium` effort.
 | `max_diff_tokens` | `100000` | Approximate diff size per LLM call. Larger diffs are split into parts. |
 | `min_severity` | `low` | Lowest severity to post: `low`, `medium`, `high`, `critical`. |
 | `review_event` | `COMMENT` | `REQUEST_CHANGES` requests changes when a new finding is `high` or `critical`. |
-| `fail_on_severity` | `none` | Fail the job if any finding is at or above this severity. |
+| `fail_on_severity` | `none` | Fail the job if any finding is at or above this severity, whatever `min_severity` is. Also fails if part of the diff couldn't be reviewed. |
 | `custom_instructions` | | Extra guidance for the reviewer (conventions, focus areas). |
 | `language` | `English` | Language for review comments. |
 | `skip_draft` | `true` | Don't review draft PRs. Add `ready_for_review` to the triggers to review them once marked ready. |
@@ -129,7 +136,7 @@ Higher effort usually finds more subtle bugs and costs more tokens. `medium` is 
 
 ## How it works
 
-1. Lists the PR's changed files through the API and skips deleted, binary, excluded and generated files.
+1. Lists the PR's changed files through the API and skips binary, excluded and generated files. Deleted files are reviewed too, and findings on them go in the review summary.
 2. Annotates each diff line with its line number in the new file, so the model can point at exact lines.
 3. Sends the diff (split into parts if large) with the PR title and description to the model, which returns structured JSON findings.
 4. Checks each finding against the diff. Findings on a line close to a changed line are moved onto it. The rest are listed in the review summary under "Findings outside the changed lines".

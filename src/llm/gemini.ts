@@ -39,6 +39,7 @@ export class GeminiProvider implements LLMProvider {
           systemInstruction: req.system,
           maxOutputTokens: this.cfg.maxTokens,
           responseMimeType: 'application/json',
+          responseJsonSchema: req.schema,
           thinkingConfig: geminiThinking(this.cfg.model, this.cfg.effort),
           ...(this.cfg.temperature !== undefined ? { temperature: this.cfg.temperature } : {}),
         },

@@ -33,7 +33,11 @@ export class OpenAIProvider implements LLMProvider {
     };
     const extras: Partial<OpenAI.Chat.ChatCompletionCreateParamsNonStreaming> = {
       reasoning_effort: openAIEffort(this.cfg.effort),
-      response_format: { type: 'json_object' },
+      response_format: {
+        type: 'json_schema',
+        // Not strict: strict mode requires every property to be required.
+        json_schema: { name: 'code_review', schema: req.schema, strict: false },
+      },
     };
 
     let res: OpenAI.Chat.ChatCompletion;

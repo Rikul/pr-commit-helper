@@ -20,10 +20,13 @@ import { FINDINGS_JSON_SCHEMA, systemPrompt, userPrompt } from './prompt';
 const CHARS_PER_TOKEN = 4;
 
 export interface ReviewResult {
+  /** New findings posted (or that would be posted) by this run. */
   findings: PlacedFinding[];
   reviewUrl?: string;
-  /** Findings at or above min_severity, including ones posted on earlier runs. */
-  current: PlacedFinding[];
+  /** Every finding from this run, whatever its severity, including ones posted on earlier runs. */
+  all: PlacedFinding[];
+  /** Parts of the diff the model could not review. */
+  errors: string[];
 }
 
 function errorMessage(err: unknown): string {
@@ -81,7 +84,7 @@ export async function reviewPullRequest(
   core.info(`Reviewing ${files.length} file(s); skipped ${skipped.length}.`);
   if (!files.length) {
     core.info('No reviewable files in this PR.');
-    return { findings: [], current: [] };
+    return { findings: [], all: [], errors: [] };
   }
 
   const chunks = chunkDiff(files, cfg.maxDiffTokens * CHARS_PER_TOKEN);
@@ -163,12 +166,12 @@ export async function reviewPullRequest(
     core.info('dry_run is on; not posting. Review that would be posted:');
     core.info(`--- ${event} ---\n${formatSummary(summaryInput)}`);
     for (const c of comments) core.info(`--- ${c.path}:${c.start_line ? `${c.start_line}-` : ''}${c.line} ---\n${c.body}`);
-    return { findings: fresh, current };
+    return { findings: fresh, all: placed, errors };
   }
 
   if (!fresh.length && prior.hasReview && !errors.length) {
     core.info('No new findings since the last review; not posting another one.');
-    return { findings: fresh, current };
+    return { findings: fresh, all: placed, errors };
   }
 
   let reviewUrl: string;
@@ -192,7 +195,7 @@ export async function reviewPullRequest(
     });
   }
   core.info(`Posted review: ${reviewUrl}`);
-  return { findings: fresh, current, reviewUrl };
+  return { findings: fresh, all: placed, errors, reviewUrl };
 }
 
 export async function run(): Promise<void> {
@@ -221,9 +224,12 @@ export async function run(): Promise<void> {
 
     if (cfg.failOnSeverity !== 'none') {
       const threshold = severityRank(cfg.failOnSeverity);
-      const blocking = result.current.filter((f) => severityRank(f.severity) >= threshold);
+      const blocking = result.all.filter((f) => severityRank(f.severity) >= threshold);
       if (blocking.length) {
         core.setFailed(`${blocking.length} finding(s) at or above "${cfg.failOnSeverity}" severity.`);
+      } else if (result.errors.length) {
+        // A severity gate can't pass on a review that didn't cover the whole diff.
+        core.setFailed(`The review is incomplete (${result.errors.length} part(s) failed), so fail_on_severity can't pass.`);
       }
     }
   } catch (err) {

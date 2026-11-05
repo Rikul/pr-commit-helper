@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { SEVERITIES, type Severity, severityRank } from './config';
-import { commentableLines, hunkIndexOf, type FileDiff } from './diff';
+import { commentableLines, hunkIndexOf, lineText, type FileDiff } from './diff';
 
 const FindingSchema = z.object({
   path: z.string().min(1),
@@ -32,14 +32,30 @@ export interface ParsedReview {
   invalid: number;
 }
 
-/** Pulls the first JSON object out of model output (tolerates code fences or prose). */
+/**
+ * Reads the JSON object from model output. Plain JSON is tried first, so code
+ * fences inside finding bodies are left alone; then a response wrapped in one
+ * outer fence; then the outermost {...} in surrounding prose.
+ */
 export function extractJson(text: string): unknown {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
-  const candidate = fenced?.[1] ?? text;
-  const start = candidate.indexOf('{');
-  const end = candidate.lastIndexOf('}');
+  const trimmed = text.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // fall through
+  }
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+  if (fenced) {
+    try {
+      return JSON.parse(fenced[1]!);
+    } catch {
+      // fall through
+    }
+  }
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
   if (start === -1 || end <= start) throw new Error('No JSON object found in model output.');
-  return JSON.parse(candidate.slice(start, end + 1));
+  return JSON.parse(trimmed.slice(start, end + 1));
 }
 
 export function parseReview(text: string): ParsedReview {
@@ -72,8 +88,9 @@ export function placeFindings(findings: Finding[], files: FileDiff[]): PlacedFin
   const byPath = new Map(files.map((f) => [f.path, f]));
   return findings.map((f) => {
     const file = byPath.get(f.path) ?? byPath.get(f.path.replace(/^\.?\//, ''));
-    const base = { ...f, start_line: f.start_line ?? undefined, fingerprint: fingerprint(f) };
-    if (!file) return { ...base, inline: false };
+    const path = file?.path ?? f.path;
+    const offDiff = { ...f, path, start_line: undefined, inline: false };
+    if (!file) return { ...offDiff, fingerprint: fingerprint(path, f.title, `L${f.line}`) };
 
     const lines = commentableLines(file);
     let line = f.line;
@@ -81,7 +98,7 @@ export function placeFindings(findings: Finding[], files: FileDiff[]): PlacedFin
       const nearest = [...lines]
         .filter((l) => Math.abs(l - line) <= SNAP_DISTANCE)
         .sort((a, b) => Math.abs(a - line) - Math.abs(b - line))[0];
-      if (nearest === undefined) return { ...base, path: file.path, inline: false };
+      if (nearest === undefined) return { ...offDiff, fingerprint: fingerprint(path, f.title, `L${f.line}`) };
       line = nearest;
     }
 
@@ -95,13 +112,16 @@ export function placeFindings(findings: Finding[], files: FileDiff[]): PlacedFin
     // A suggestion only replaces the exact cited range; if we moved the line, drop it.
     const suggestion = line === f.line && start_line === (f.start_line ?? undefined) ? f.suggestion : undefined;
 
-    return { ...base, path: file.path, line, start_line, suggestion, inline: true };
+    // Keyed on the cited code rather than its line number, so the same finding
+    // keeps its fingerprint when other edits shift lines between pushes.
+    const anchor = lineText(file, line) ?? `L${line}`;
+    return { ...f, path, line, start_line, suggestion, inline: true, fingerprint: fingerprint(path, f.title, anchor) };
   });
 }
 
-export function fingerprint(f: Pick<Finding, 'path' | 'title'>): string {
-  const norm = `${f.path}\n${f.title.toLowerCase().replace(/\s+/g, ' ').trim()}`;
-  return createHash('sha256').update(norm).digest('hex').slice(0, 16);
+export function fingerprint(path: string, title: string, anchor: string): string {
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  return createHash('sha256').update(`${path}\n${norm(title)}\n${norm(anchor)}`).digest('hex').slice(0, 16);
 }
 
 export function filterBySeverity<T extends { severity: Severity }>(findings: T[], min: Severity): T[] {

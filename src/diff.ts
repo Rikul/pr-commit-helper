@@ -67,19 +67,48 @@ export function commentableLines(file: FileDiff): Set<number> {
   return set;
 }
 
+/** Text of a new-file line within the diff, if the diff contains it. */
+export function lineText(file: FileDiff, line: number): string | undefined {
+  for (const h of file.hunks) {
+    for (const l of h.lines) if (l.newLine === line) return l.text;
+  }
+  return undefined;
+}
+
 /** Index of the hunk containing a new-file line, or -1. */
 export function hunkIndexOf(file: FileDiff, line: number): number {
   return file.hunks.findIndex((h) => h.lines.some((l) => l.newLine === line));
 }
 
-export function renderHunk(h: Hunk): string {
-  const out = [h.header];
+/** Splits a hunk into pieces whose rendered size stays under `maxChars`. */
+export function splitHunk(h: Hunk, maxChars: number): Hunk[] {
+  if (renderHunk(h).length <= maxChars) return [h];
+  const pieces: Hunk[] = [];
+  const header = `${h.header} (continued)`;
+  let lines: DiffLine[] = [];
+  let size = header.length;
   for (const l of h.lines) {
-    const no = l.newLine !== undefined ? String(l.newLine).padStart(5) : '     ';
-    const sign = l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' ';
-    out.push(`${no} ${sign} ${l.text}`);
+    const len = renderLine(l).length + 1;
+    if (lines.length && size + len > maxChars) {
+      pieces.push({ header: pieces.length ? header : h.header, lines });
+      lines = [];
+      size = header.length;
+    }
+    lines.push(l);
+    size += len;
   }
-  return out.join('\n');
+  if (lines.length) pieces.push({ header: pieces.length ? header : h.header, lines });
+  return pieces;
+}
+
+function renderLine(l: DiffLine): string {
+  const no = l.newLine !== undefined ? String(l.newLine).padStart(5) : '     ';
+  const sign = l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' ';
+  return `${no} ${sign} ${l.text}`;
+}
+
+export function renderHunk(h: Hunk): string {
+  return [h.header, ...h.lines.map(renderLine)].join('\n');
 }
 
 export function renderFileHeader(f: FileDiff): string {
@@ -89,8 +118,9 @@ export function renderFileHeader(f: FileDiff): string {
 
 /**
  * Packs files (and, for oversized files, individual hunks) into chunks whose
- * rendered size stays under `maxChars`. A single hunk larger than the budget
- * still gets its own chunk rather than being cut.
+ * rendered size stays under `maxChars`. A hunk larger than the budget is split
+ * at line boundaries, repeating the file and hunk headers on each piece. Only a
+ * single diff line longer than the budget can make a chunk exceed it.
  */
 export function chunkDiff(files: FileDiff[], maxChars: number): string[] {
   const chunks: string[] = [];
@@ -115,7 +145,10 @@ export function chunkDiff(files: FileDiff[], maxChars: number): string[] {
       push(whole);
       continue;
     }
-    for (const h of f.hunks) push(`${header} (partial)\n${renderHunk(h)}`);
+    const partial = `${header} (partial)`;
+    for (const h of f.hunks) {
+      for (const piece of splitHunk(h, maxChars - partial.length - 1)) push(`${partial}\n${renderHunk(piece)}`);
+    }
   }
   flush();
   return chunks;

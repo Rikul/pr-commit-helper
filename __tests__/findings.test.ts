@@ -34,6 +34,15 @@ describe('extractJson / parseReview', () => {
     ]);
   });
 
+  it('keeps code fences inside finding bodies', () => {
+    const text = JSON.stringify({
+      summary: 's',
+      findings: [{ path: 'a', line: 1, severity: 'low', category: 'bug', title: 't', body: 'Use:\n```ts\nsafe();\n```' }],
+    });
+    expect(parseReview(text).findings[0]!.body).toContain('```ts');
+    expect(parseReview('```json\n' + text + '\n```').findings).toHaveLength(1);
+  });
+
   it('throws when there is no JSON', () => {
     expect(() => parseReview('no json here')).toThrow();
   });
@@ -73,11 +82,23 @@ describe('placeFindings', () => {
     expect(out.map((f) => f.start_line)).toEqual([undefined, undefined, 10]);
   });
 
-  it('accepts a leading ./ in paths', () => {
-    expect(placeFindings([{ ...base, path: './src/a.ts', line: 11 }], [file])[0]).toMatchObject({
-      inline: true,
-      path: 'src/a.ts',
-    });
+  it('accepts a leading ./ in paths and fingerprints the canonical path', () => {
+    const [a, b] = placeFindings(
+      [
+        { ...base, path: './src/a.ts', line: 11 },
+        { ...base, path: 'src/a.ts', line: 11 },
+      ],
+      [file],
+    );
+    expect(a).toMatchObject({ inline: true, path: 'src/a.ts' });
+    expect(a!.fingerprint).toBe(b!.fingerprint);
+  });
+
+  it('fingerprints by cited code, not line number', () => {
+    const shifted: FileDiff = { ...file, hunks: parsePatch('@@ -10,3 +20,4 @@\n ctx\n+added1\n+added2\n ctx2') };
+    const [before] = placeFindings([{ ...base, path: 'src/a.ts', line: 11 }], [file]);
+    const [after] = placeFindings([{ ...base, path: 'src/a.ts', line: 21 }], [shifted]);
+    expect(before!.fingerprint).toBe(after!.fingerprint);
   });
 });
 
@@ -86,7 +107,7 @@ describe('dedupe / severity', () => {
     const placed = placeFindings(
       [
         { ...base, path: 'src/a.ts', line: 11, severity: 'low' },
-        { ...base, path: 'src/a.ts', line: 12, severity: 'critical', title: 'OOPS ' },
+        { ...base, path: 'src/a.ts', line: 11, severity: 'critical', title: 'OOPS ' },
         { ...base, path: 'src/a.ts', line: 41, severity: 'medium', title: 'Other' },
       ],
       [file],
@@ -94,5 +115,16 @@ describe('dedupe / severity', () => {
     const d = dedupe(placed);
     expect(d.map((f) => f.severity)).toEqual(['critical', 'medium']);
     expect(filterBySeverity(d, 'high')).toHaveLength(1);
+  });
+
+  it('keeps same-titled findings on different lines', () => {
+    const placed = placeFindings(
+      [
+        { ...base, path: 'src/a.ts', line: 11, title: 'SQL injection' },
+        { ...base, path: 'src/a.ts', line: 42, title: 'SQL injection' },
+      ],
+      [file],
+    );
+    expect(dedupe(placed)).toHaveLength(2);
   });
 });

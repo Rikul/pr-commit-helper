@@ -82,7 +82,7 @@ describe('reviewPullRequest', () => {
     const res = await reviewPullRequest(cfg(), second.octokit, ref, fakeProvider([bug]));
     expect(second.created).toHaveLength(0);
     expect(res?.findings).toHaveLength(0);
-    expect(res?.current).toHaveLength(1);
+    expect(res?.all).toHaveLength(1);
   });
 
   it('requests changes for high findings when configured', async () => {
@@ -99,7 +99,7 @@ describe('reviewPullRequest', () => {
     expect(created[0].body).toContain('Possible undefined access');
   });
 
-  it('respects min_severity and dry_run', async () => {
+  it('respects min_severity and dry_run, but keeps all findings for the failure gate', async () => {
     const { octokit, created } = fakeOctokit();
     const res = await reviewPullRequest(
       cfg({ min_severity: 'critical', dry_run: 'true' }),
@@ -109,6 +109,24 @@ describe('reviewPullRequest', () => {
     );
     expect(created).toHaveLength(0);
     expect(res?.findings).toHaveLength(0);
+    expect(res?.all.map((f) => f.severity)).toEqual(['high']);
+  });
+
+  it('reports parts that failed when others succeed', async () => {
+    const { octokit } = fakeOctokit();
+    let n = 0;
+    const provider: LLMProvider = {
+      name: 'half',
+      async complete() {
+        n++;
+        if (n > 2) throw new Error('rate limited');
+        return { text: JSON.stringify({ summary: 's', findings: [] }), model: 'm' };
+      },
+    };
+    // A tiny budget splits the diff into several parts.
+    const res = await reviewPullRequest(cfg({ max_diff_tokens: '20' }), octokit, ref, provider);
+    expect(res?.errors.length).toBeGreaterThan(0);
+    expect(res?.errors[0]).toMatch(/rate limited/);
   });
 
   it('retries once when the model returns invalid JSON', async () => {

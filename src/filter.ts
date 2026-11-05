@@ -24,9 +24,7 @@ export function filterFiles<T extends ChangedFile>(
   const skipped: { path: string; reason: string }[] = [];
 
   for (const f of files) {
-    if (f.status === 'removed') {
-      skipped.push({ path: f.filename, reason: 'deleted' });
-    } else if (!f.patch) {
+    if (!f.patch) {
       skipped.push({ path: f.filename, reason: 'binary or diff too large' });
     } else if (opts.include.length && !matchesAny(f.filename, opts.include)) {
       skipped.push({ path: f.filename, reason: 'not in include' });

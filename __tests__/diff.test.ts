@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { chunkDiff, commentableLines, type FileDiff, hunkIndexOf, parsePatch, renderHunk } from '../src/diff';
+import {
+  chunkDiff,
+  commentableLines,
+  type FileDiff,
+  hunkIndexOf,
+  lineText,
+  parsePatch,
+  renderHunk,
+  splitHunk,
+} from '../src/diff';
 
 const PATCH = [
   '@@ -1,4 +1,5 @@',
@@ -49,6 +58,8 @@ describe('commentable lines', () => {
     expect([...commentableLines(file)].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 21, 22, 23]);
     expect(hunkIndexOf(file, 22)).toBe(1);
     expect(hunkIndexOf(file, 10)).toBe(-1);
+    expect(lineText(file, 3)).toBe('const b = 3;');
+    expect(lineText(file, 10)).toBeUndefined();
   });
 });
 
@@ -68,6 +79,17 @@ describe('chunkDiff', () => {
     expect(chunks.length).toBe(2);
     expect(chunks[0]).toContain('### File: a');
     expect(chunks[1]).toContain('### File: b');
+  });
+
+  it('splits a hunk bigger than the budget at line boundaries', () => {
+    const f = mk('huge', 200);
+    const budget = 1000;
+    const chunks = chunkDiff([f], budget);
+    expect(chunks.length).toBeGreaterThan(3);
+    expect(chunks.every((c) => c.length <= budget)).toBe(true);
+    expect(chunks[1]).toContain('(continued)');
+    const pieces = splitHunk(f.hunks[0]!, budget);
+    expect(pieces.flatMap((p) => p.lines)).toEqual(f.hunks[0]!.lines);
   });
 
   it('splits one big file by hunk', () => {

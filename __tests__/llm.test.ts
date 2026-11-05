@@ -84,7 +84,10 @@ describe('openai provider', () => {
     expect(calls[0]!.body).toMatchObject({
       model: 'gpt-x',
       reasoning_effort: 'high',
-      response_format: { type: 'json_object' },
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'code_review', schema: { type: 'object' }, strict: false },
+      },
       max_completion_tokens: 32000,
       messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'usr' }],
     });
@@ -125,6 +128,7 @@ describe('gemini provider', () => {
       responseMimeType: 'application/json',
       maxOutputTokens: 32000,
       thinkingConfig: { thinkingLevel: 'LOW' },
+      responseJsonSchema: { type: 'object' },
     });
     expect(c.body.systemInstruction.parts[0].text).toBe('sys');
     expect(res).toMatchObject({ text: REVIEW, model: 'gemini-3-pro', inputTokens: 4 });

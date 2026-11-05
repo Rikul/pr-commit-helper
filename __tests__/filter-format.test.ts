@@ -14,10 +14,10 @@ describe('filterFiles', () => {
     { filename: 'src/b.ts', status: 'added', patch: '@@' },
   ];
 
-  it('skips lockfiles, minified, binary and deleted files', () => {
+  it('skips lockfiles, minified and binary files but keeps deleted text files', () => {
     const r = filterFiles(files, { include: [], exclude: DEFAULT_EXCLUDES, maxFiles: 10 });
-    expect(r.selected.map((f) => f.filename)).toEqual(['src/a.ts', 'src/b.ts']);
-    expect(r.skipped).toHaveLength(4);
+    expect(r.selected.map((f) => f.filename)).toEqual(['src/a.ts', 'old.ts', 'src/b.ts']);
+    expect(r.skipped).toHaveLength(3);
   });
 
   it('honours include and max_files', () => {
@@ -71,6 +71,10 @@ describe('format', () => {
     expect(s).toContain('2 already reported earlier');
     expect(s).toContain('yarn.lock');
     expect(markersIn(s)).toEqual(['def456']);
+    // Suggestions survive in the body, as a plain code block.
+    expect(s).toContain('Suggested change:');
+    expect(s).toContain('  ````\n  if (x) {');
+    expect(s).not.toContain('suggestion\n');
     expect(s).toContain('<!-- pr-commit-helper:review -->');
   });
 
