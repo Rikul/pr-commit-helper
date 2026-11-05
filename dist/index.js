@@ -149041,7 +149041,7 @@ async function reviewPullRequest(cfg, octokit, ref, provider) {
   }
   const chunks = chunkDiff(files, cfg.maxDiffTokens * CHARS_PER_TOKEN);
   const system = systemPrompt(cfg.language, cfg.customInstructions);
-  const summaries = [];
+  const summaries = new Array(chunks.length);
   const raw = [];
   const errors = [];
   let model = cfg.model;
@@ -149064,7 +149064,7 @@ async function reviewPullRequest(cfg, octokit, ref, provider) {
     });
     try {
       const r2 = await reviewChunk(provider, system, user);
-      summaries.push(r2.summary);
+      summaries[i2] = r2.summary;
       raw.push(...r2.findings);
       model = r2.model;
       inputTokens += r2.inTok;
@@ -149088,7 +149088,7 @@ async function reviewPullRequest(cfg, octokit, ref, provider) {
     `Findings: ${placed.length} total, ${current.length} at/above ${cfg.minSeverity}, ${fresh.length} new (${inline.length} inline).`
   );
   const summaryInput = {
-    summaries: chunks.length > 1 ? summaries.map((s2, i2) => `**Part ${i2 + 1}:** ${s2}`) : summaries,
+    summaries: chunks.length > 1 ? summaries.flatMap((s2, i2) => s2 === void 0 ? [] : [`**Part ${i2 + 1}:** ${s2}`]) : summaries.filter((s2) => s2 !== void 0),
     posted: inline,
     offDiff,
     alreadyReported: current.length - fresh.length,

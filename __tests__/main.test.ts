@@ -144,6 +144,24 @@ describe('reviewPullRequest', () => {
     expect(created[0].comments).toHaveLength(1);
   });
 
+  it('labels part summaries by their own part when an earlier part fails', async () => {
+    const { octokit, created } = fakeOctokit();
+    let n = 0;
+    const provider: LLMProvider = {
+      name: 'first-fails',
+      async complete() {
+        n++;
+        if (n === 1) throw new Error('timeout');
+        return { text: JSON.stringify({ summary: `summary ${n}`, findings: [] }), model: 'm' };
+      },
+    };
+    await reviewPullRequest(cfg({ max_diff_tokens: '20' }), octokit, ref, provider);
+    const body: string = created[0].body;
+    expect(body).not.toContain('**Part 1:**');
+    expect(body).toContain('**Part 2:** summary 2');
+    expect(body).toMatch(/part 1\/\d+: timeout/);
+  });
+
   it('fails when every LLM call fails', async () => {
     const { octokit } = fakeOctokit();
     const provider: LLMProvider = {

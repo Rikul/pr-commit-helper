@@ -89,7 +89,8 @@ export async function reviewPullRequest(
 
   const chunks = chunkDiff(files, cfg.maxDiffTokens * CHARS_PER_TOKEN);
   const system = systemPrompt(cfg.language, cfg.customInstructions);
-  const summaries: string[] = [];
+  // Indexed by part, so a failed part doesn't shift the labels of later ones.
+  const summaries: (string | undefined)[] = new Array(chunks.length);
   const raw: Finding[] = [];
   const errors: string[] = [];
   let model = cfg.model;
@@ -113,7 +114,7 @@ export async function reviewPullRequest(
     });
     try {
       const r = await reviewChunk(provider, system, user);
-      summaries.push(r.summary);
+      summaries[i] = r.summary;
       raw.push(...r.findings);
       model = r.model;
       inputTokens += r.inTok;
@@ -139,7 +140,10 @@ export async function reviewPullRequest(
   );
 
   const summaryInput = {
-    summaries: chunks.length > 1 ? summaries.map((s, i) => `**Part ${i + 1}:** ${s}`) : summaries,
+    summaries:
+      chunks.length > 1
+        ? summaries.flatMap((s, i) => (s === undefined ? [] : [`**Part ${i + 1}:** ${s}`]))
+        : summaries.filter((s): s is string => s !== undefined),
     posted: inline,
     offDiff,
     alreadyReported: current.length - fresh.length,
