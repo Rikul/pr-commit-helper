@@ -1,0 +1,33 @@
+{
+  "name": "pr-commit-helper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub Action that reviews pull requests with an LLM (Anthropic, OpenAI-compatible, Gemini) and posts findings as review comments.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --legal-comments=external --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "all": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@actions/core": "^3.0.1",
+    "@actions/github": "^9.1.1",
+    "@anthropic-ai/sdk": "^1.5.0",
+    "@google/genai": "^2.32.0",
+    "minimatch": "^11.0.4",
+    "openai": "^7.51.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

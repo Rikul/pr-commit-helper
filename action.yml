@@ -1,0 +1,103 @@
+name: 'PR Commit Helper'
+description: 'Reviews pull requests with an LLM (Anthropic, OpenAI-compatible, Gemini) and posts findings as inline review comments.'
+author: 'Rikul'
+branding:
+  icon: 'message-square'
+  color: 'purple'
+
+inputs:
+  provider:
+    description: 'LLM provider: anthropic | openai | gemini. Use "openai" for any OpenAI-compatible endpoint (Azure, OpenRouter, Ollama, vLLM, ...).'
+    required: false
+    default: 'anthropic'
+  api_key:
+    description: 'API key for the provider. Pass it from a secret, e.g. ${{ secrets.ANTHROPIC_API_KEY }}.'
+    required: true
+  model:
+    description: 'Model ID. Defaults to claude-opus-5-5 for anthropic; required for openai and gemini.'
+    required: false
+    default: ''
+  base_url:
+    description: 'Custom API base URL (e.g. https://openrouter.ai/api/v1 or http://localhost:11434/v1). Optional.'
+    required: false
+    default: ''
+  effort:
+    description: 'Reasoning effort: low | medium | high | xhigh | max. Mapped to each provider''s reasoning/thinking control.'
+    required: false
+    default: 'medium'
+  max_tokens:
+    description: 'Max output tokens per LLM call.'
+    required: false
+    default: '32000'
+  temperature:
+    description: 'Sampling temperature. Leave empty to use the provider default (recent Claude models reject this).'
+    required: false
+    default: ''
+  anthropic_fallback:
+    description: 'anthropic only: "default" lets the Claude API re-run a declined request on a fallback model; "none" disables it. Ignored when base_url is set.'
+    required: false
+    default: 'default'
+  github_token:
+    description: 'Token used to read the PR and post the review. Needs pull-requests: write.'
+    required: false
+    default: '${{ github.token }}'
+  pr_number:
+    description: 'PR number to review. Only needed for non-pull_request events such as workflow_dispatch.'
+    required: false
+    default: ''
+  include:
+    description: 'Glob patterns (comma or newline separated) of files to review. Empty = all files.'
+    required: false
+    default: ''
+  exclude:
+    description: 'Extra glob patterns to skip, added to the built-in list (lockfiles, dist/, minified files, ...).'
+    required: false
+    default: ''
+  max_files:
+    description: 'Maximum number of files to review. Extra files are listed as skipped.'
+    required: false
+    default: '50'
+  max_diff_tokens:
+    description: 'Approximate token budget of diff per LLM call. Bigger diffs are split across several calls.'
+    required: false
+    default: '100000'
+  min_severity:
+    description: 'Lowest severity to post: low | medium | high | critical.'
+    required: false
+    default: 'low'
+  review_event:
+    description: 'COMMENT always posts a neutral review. REQUEST_CHANGES requests changes when a finding is high or critical.'
+    required: false
+    default: 'COMMENT'
+  fail_on_severity:
+    description: 'Fail the job when a finding is at or above this severity: none | low | medium | high | critical.'
+    required: false
+    default: 'none'
+  custom_instructions:
+    description: 'Extra review guidance appended to the prompt (project conventions, areas to focus on, ...).'
+    required: false
+    default: ''
+  language:
+    description: 'Language for review comments.'
+    required: false
+    default: 'English'
+  skip_draft:
+    description: 'Skip draft PRs.'
+    required: false
+    default: 'true'
+  dry_run:
+    description: 'Print the review to the log instead of posting it.'
+    required: false
+    default: 'false'
+
+outputs:
+  findings_count:
+    description: 'Number of findings posted.'
+  findings_json:
+    description: 'JSON array of all findings.'
+  review_url:
+    description: 'URL of the posted review (empty if none was posted).'
+
+runs:
+  using: 'node24'
+  main: 'dist/index.js'

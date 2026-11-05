@@ -1,0 +1,29 @@
+# Runs this action on its own pull requests. Add an ANTHROPIC_API_KEY
+# repository secret to enable it; without the secret the step is skipped.
+name: Self review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: self-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Review
+        if: env.ANTHROPIC_API_KEY != ''
+        uses: ./
+        with:
+          api_key: ${{ env.ANTHROPIC_API_KEY }}
+          effort: medium
