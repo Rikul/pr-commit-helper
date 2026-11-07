@@ -28190,9 +28190,9 @@ var init_file_store = __esm({
           }
         }
         resolveUnderRoot(relPath) {
-          const norm = relPath.replace(/\\/g, "/").replace(/^\/+/, "");
-          const parts = norm.split("/").filter((p) => p !== "" && p !== ".");
-          if (path3.posix.isAbsolute(norm) || parts.includes("..")) {
+          const norm2 = relPath.replace(/\\/g, "/").replace(/^\/+/, "");
+          const parts = norm2.split("/").filter((p) => p !== "" && p !== ".");
+          if (path3.posix.isAbsolute(norm2) || parts.includes("..")) {
             throw new FileStoreError(FileStoreError.ESCAPES_ROOT, relPath);
           }
           return parts.length === 0 ? this.rootPath : path3.join(this.rootPath, ...parts);
@@ -77824,7 +77824,7 @@ var posixClasses = {
 var braceEscape = (s2) => s2.replace(/[[\]\\-]/g, "\\$&");
 var noMatch = /$./;
 var parseClass = (glob2, position, nocase = false, form) => {
-  const norm = (c) => {
+  const norm2 = (c) => {
     const n = form ? c.normalize(form) : c;
     return [...n].length === 1 ? n : c;
   };
@@ -77875,7 +77875,7 @@ var parseClass = (glob2, position, nocase = false, form) => {
       }
     }
     escaping = false;
-    const n = norm(c);
+    const n = norm2(c);
     if (rangeStart) {
       if (n.codePointAt(0) > rangeStart.codePointAt(0)) {
         ranges.push(braceEscape(rangeStart) + "-" + braceEscape(n));
@@ -95223,13 +95223,13 @@ function _promise(Class2, innerType) {
 }
 // @__NO_SIDE_EFFECTS__
 function _custom(Class2, fn, _params) {
-  const norm = normalizeParams(_params);
-  norm.abort ?? (norm.abort = true);
+  const norm2 = normalizeParams(_params);
+  norm2.abort ?? (norm2.abort = true);
   const schema = new Class2({
     type: "custom",
     check: "custom",
     fn,
-    ...norm
+    ...norm2
   });
   return schema;
 }
@@ -99528,12 +99528,12 @@ function placeFindings(findings, files) {
     const file2 = byPath.get(f3.path) ?? byPath.get(f3.path.replace(/^\.?\//, ""));
     const path7 = file2?.path ?? f3.path;
     const offDiff = { ...f3, path: path7, start_line: void 0, inline: false };
-    if (!file2) return { ...offDiff, fingerprint: fingerprint(path7, f3.title, `L${f3.line}`) };
+    if (!file2) return { ...offDiff, fingerprint: fingerprint(path7, `L${f3.line}`) };
     const lines = commentableLines(file2);
     let line = f3.line;
     if (!lines.has(line)) {
       const nearest = [...lines].filter((l) => Math.abs(l - line) <= SNAP_DISTANCE).sort((a, b) => Math.abs(a - line) - Math.abs(b - line))[0];
-      if (nearest === void 0) return { ...offDiff, fingerprint: fingerprint(path7, f3.title, `L${f3.line}`) };
+      if (nearest === void 0) return { ...offDiff, fingerprint: fingerprint(path7, `L${f3.line}`) };
       line = nearest;
     }
     let start_line = f3.start_line ?? void 0;
@@ -99542,13 +99542,12 @@ function placeFindings(findings, files) {
     }
     const suggestion = line === f3.line && start_line === (f3.start_line ?? void 0) ? f3.suggestion : void 0;
     const anchor2 = lineText(file2, line) ?? `L${line}`;
-    return { ...f3, path: path7, line, start_line, suggestion, inline: true, fingerprint: fingerprint(path7, f3.title, anchor2) };
+    return { ...f3, path: path7, line, start_line, suggestion, inline: true, fingerprint: fingerprint(path7, anchor2) };
   });
 }
-function fingerprint(path7, title, anchor2) {
-  const norm = (s2) => s2.toLowerCase().replace(/\s+/g, " ").trim();
+var norm = (s2) => s2.toLowerCase().replace(/\s+/g, " ").trim();
+function fingerprint(path7, anchor2) {
   return createHash("sha256").update(`${path7}
-${norm(title)}
 ${norm(anchor2)}`).digest("hex").slice(0, 16);
 }
 function filterBySeverity(findings, min) {
@@ -99557,8 +99556,10 @@ function filterBySeverity(findings, min) {
 function dedupe(findings) {
   const best = /* @__PURE__ */ new Map();
   for (const f3 of findings) {
-    const prev = best.get(f3.fingerprint);
-    if (!prev || severityRank(f3.severity) > severityRank(prev.severity)) best.set(f3.fingerprint, f3);
+    const key = `${f3.fingerprint}
+${norm(f3.title)}`;
+    const prev = best.get(key);
+    if (!prev || severityRank(f3.severity) > severityRank(prev.severity)) best.set(key, f3);
   }
   return [...best.values()].sort(
     (a, b) => severityRank(b.severity) - severityRank(a.severity) || a.path.localeCompare(b.path) || a.line - b.line
