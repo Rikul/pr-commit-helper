@@ -43,6 +43,8 @@ That's it. The next PR gets a review from `claude-opus-5-5` at `medium` effort.
 
 > Pin to a commit SHA instead of `@main` if you want updates to this action to arrive only when you choose.
 
+> If you fork this action into a **private** repository, other repositories can't use it until you allow it: in that repository, open **Settings → Actions → General → Access** and choose "Accessible from repositories owned by the user" (or the organization). Otherwise runs fail with "Unable to resolve action … repository not found".
+
 ## Provider examples
 
 **Anthropic**
