@@ -1,0 +1,7 @@
+node_modules/
+coverage/
+*.log
+.DS_Store
+
+# Built by .github/workflows/build-dist.yml on pushes to main; never commit from PRs.
+dist/
