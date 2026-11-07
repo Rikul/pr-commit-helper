@@ -166,7 +166,7 @@ npm test
 npm run build   # bundles to dist/index.js (git-ignored; don't commit it)
 ```
 
-`dist/` is git-ignored and never part of a PR. Workflows run `dist/index.js` directly from `@main`, so `.github/workflows/build-dist.yml` rebuilds it after every push to `main` and commits the result there. `.github/workflows/self-review.yml` runs the action on this repo's own PRs once an `ANTHROPIC_API_KEY` secret is set.
+`dist/` is git-ignored and never part of a PR. Workflows run `dist/index.js` directly from `@main`, so `.github/workflows/build-dist.yml` rebuilds it after every push to `main` and commits the result there.
 
 ## License
 
