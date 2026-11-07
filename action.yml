@@ -11,7 +11,7 @@ inputs:
     required: false
     default: 'anthropic'
   api_key:
-    description: 'API key for the provider. Pass it from a secret, e.g. ${{ secrets.ANTHROPIC_API_KEY }}.'
+    description: 'API key for the provider. Store it as a repository secret and pass it in, for example from secrets.ANTHROPIC_API_KEY.'
     required: true
   model:
     description: 'Model ID. Defaults to claude-opus-5-5 for anthropic; required for openai and gemini.'
