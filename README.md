@@ -163,10 +163,10 @@ This action doesn't check out or execute PR code, which is what makes `pull_requ
 npm ci
 npm run typecheck
 npm test
-npm run build   # bundles to dist/index.js – commit the result
+npm run build   # bundles to dist/index.js (git-ignored; don't commit it)
 ```
 
-`dist/` is committed because workflows run it directly from `@main`. CI fails if `dist/` doesn't match a fresh build. `.github/workflows/self-review.yml` runs the action on this repo's own PRs once an `ANTHROPIC_API_KEY` secret is set.
+`dist/` is git-ignored and never part of a PR. Workflows run `dist/index.js` directly from `@main`, so `.github/workflows/build-dist.yml` rebuilds it after every push to `main` and commits the result there. `.github/workflows/self-review.yml` runs the action on this repo's own PRs once an `ANTHROPIC_API_KEY` secret is set.
 
 ## License
 

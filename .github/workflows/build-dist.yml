@@ -1,0 +1,44 @@
+# dist/ is git-ignored so PRs stay source-only, but `uses: Rikul/pr-commit-helper@main`
+# runs dist/index.js straight from main. After each push to main, rebuild the bundle
+# and commit it if it changed. Pushes made with GITHUB_TOKEN don't trigger workflows,
+# so this commit doesn't start another run.
+name: Build dist
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'dist/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-dist
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Commit dist/ if it changed
+        run: |
+          git add -f dist
+          if git diff --cached --quiet; then
+            echo "dist/ is already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Build dist for ${GITHUB_SHA::7} [skip ci]"
+          git push
