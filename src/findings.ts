@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { SEVERITIES, type Severity, severityRank } from './config';
-import { commentableLines, hunkIndexOf, lineText, type FileDiff } from './diff';
+import { commentableLines, hunkIndexOf, lineContext, lineText, type FileDiff } from './diff';
 
 const FindingSchema = z.object({
   path: z.string().min(1),
@@ -74,7 +74,12 @@ export interface PlacedFinding extends Omit<Finding, 'start_line'> {
   start_line?: number;
   /** True when the finding maps to a commentable diff line and can be posted inline. */
   inline: boolean;
+  /** Cited line + neighbours (+ occurrence number for repeated windows). Primary match for re-runs. */
   fingerprint: string;
+  /** Cited line text only. Used as a fallback match when a neighbouring line was edited. */
+  lineKey: string;
+  /** True when the cited line's text appears once in the file's diff, so lineKey is unambiguous. */
+  lineUnique: boolean;
 }
 
 const SNAP_DISTANCE = 3;
@@ -86,11 +91,18 @@ const SNAP_DISTANCE = 3;
  */
 export function placeFindings(findings: Finding[], files: FileDiff[]): PlacedFinding[] {
   const byPath = new Map(files.map((f) => [f.path, f]));
+  const indexes = new Map<FileDiff, FileIndex>();
+  const indexOf = (file: FileDiff) => {
+    let idx = indexes.get(file);
+    if (!idx) indexes.set(file, (idx = indexFile(file)));
+    return idx;
+  };
   return findings.map((f) => {
     const file = byPath.get(f.path) ?? byPath.get(f.path.replace(/^\.?\//, ''));
     const path = file?.path ?? f.path;
-    const offDiff = { ...f, path, start_line: undefined, inline: false };
-    if (!file) return { ...offDiff, fingerprint: fingerprint(path, `L${f.line}`) };
+    const offKey = hash(path, ['off', f.line]);
+    const offDiff = { ...f, path, start_line: undefined, inline: false, fingerprint: offKey, lineKey: offKey, lineUnique: false };
+    if (!file) return offDiff;
 
     const lines = commentableLines(file);
     let line = f.line;
@@ -98,7 +110,7 @@ export function placeFindings(findings: Finding[], files: FileDiff[]): PlacedFin
       const nearest = [...lines]
         .filter((l) => Math.abs(l - line) <= SNAP_DISTANCE)
         .sort((a, b) => Math.abs(a - line) - Math.abs(b - line))[0];
-      if (nearest === undefined) return { ...offDiff, fingerprint: fingerprint(path, `L${f.line}`) };
+      if (nearest === undefined) return offDiff;
       line = nearest;
     }
 
@@ -112,18 +124,53 @@ export function placeFindings(findings: Finding[], files: FileDiff[]): PlacedFin
     // A suggestion only replaces the exact cited range; if we moved the line, drop it.
     const suggestion = line === f.line && start_line === (f.start_line ?? undefined) ? f.suggestion : undefined;
 
-    // Keyed on where the finding is (file + cited code), not on its wording:
+    // Keyed on where the finding is (file + cited code), never on its wording:
     // models reword titles between runs, and code text survives line shifts.
-    // Re-runs use this to skip findings already posted at the same spot.
-    const anchor = lineText(file, line) ?? `L${line}`;
-    return { ...f, path, line, start_line, suggestion, inline: true, fingerprint: fingerprint(path, anchor) };
+    const keys = indexOf(file).keys.get(line)!;
+    return { ...f, path, line, start_line, suggestion, inline: true, ...keys };
   });
+}
+
+interface FileIndex {
+  keys: Map<number, { fingerprint: string; lineKey: string; lineUnique: boolean }>;
+}
+
+/** Precomputes match keys for every commentable line of a file. */
+function indexFile(file: FileDiff): FileIndex {
+  const lines = [...commentableLines(file)].sort((a, b) => a - b);
+  const textCount = new Map<string, number>();
+  const windowSeen = new Map<string, number>();
+  for (const l of lines) {
+    const t = norm(lineText(file, l)!);
+    textCount.set(t, (textCount.get(t) ?? 0) + 1);
+  }
+  const keys: FileIndex['keys'] = new Map();
+  for (const l of lines) {
+    const context = lineContext(file, l)!.map((p) => (p === null ? null : norm(p)));
+    const windowId = JSON.stringify(context);
+    // Identical windows (same line and same neighbours) are numbered in file order.
+    const occurrence = windowSeen.get(windowId) ?? 0;
+    windowSeen.set(windowId, occurrence + 1);
+    const text = context[1]!;
+    keys.set(l, {
+      fingerprint: hash(file.path, ['ctx', context, occurrence]),
+      lineKey: hash(file.path, ['line', text]),
+      lineUnique: textCount.get(text) === 1,
+    });
+  }
+  return { keys };
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
-export function fingerprint(path: string, anchor: string): string {
-  return createHash('sha256').update(`${path}\n${norm(anchor)}`).digest('hex').slice(0, 16);
+/** Hashes a path plus structured parts. JSON keeps line boundaries and null vs '' distinct. */
+function hash(path: string, parts: unknown): string {
+  return createHash('sha256').update(`${path}\n${JSON.stringify(parts)}`).digest('hex').slice(0, 16);
+}
+
+/** True when this finding (or an equivalent) was already posted on an earlier run. */
+export function alreadyPosted(f: PlacedFinding, prior: { fingerprints: Set<string>; lineKeys: Set<string> }): boolean {
+  return prior.fingerprints.has(f.fingerprint) || (f.lineUnique && prior.lineKeys.has(f.lineKey));
 }
 
 export function filterBySeverity<T extends { severity: Severity }>(findings: T[], min: Severity): T[] {

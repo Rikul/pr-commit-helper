@@ -1,6 +1,6 @@
 import type { getOctokit } from '@actions/github';
 import type { ChangedFile } from './filter';
-import { markersIn, REVIEW_MARKER } from './format';
+import { lineKeysIn, markersIn, REVIEW_MARKER } from './format';
 
 export type Octokit = ReturnType<typeof getOctokit>;
 
@@ -46,6 +46,8 @@ export async function listChangedFiles(octokit: Octokit, ref: RepoRef): Promise<
 export interface PriorActivity {
   /** Fingerprints of findings this action already posted as inline comments. */
   fingerprints: Set<string>;
+  /** Line keys of findings already posted (fallback match when neighbours changed). */
+  lineKeys: Set<string>;
   /** Whether this action has posted a review on the PR before. */
   hasReview: boolean;
 }
@@ -56,11 +58,18 @@ export async function getPriorActivity(octokit: Octokit, ref: RepoRef): Promise<
     octokit.paginate(octokit.rest.pulls.listReviews, { ...ref, per_page: 100 }),
   ]);
   const fingerprints = new Set<string>();
-  for (const c of comments) for (const fp of markersIn(c.body ?? '')) fingerprints.add(fp);
+  const lineKeys = new Set<string>();
+  for (const c of comments) {
+    for (const fp of markersIn(c.body ?? '')) fingerprints.add(fp);
+    for (const k of lineKeysIn(c.body ?? '')) lineKeys.add(k);
+  }
   // Findings listed in a review body (outside the diff) carry markers too.
-  for (const r of reviews) for (const fp of markersIn(r.body ?? '')) fingerprints.add(fp);
+  for (const r of reviews) {
+    for (const fp of markersIn(r.body ?? '')) fingerprints.add(fp);
+    for (const k of lineKeysIn(r.body ?? '')) lineKeys.add(k);
+  }
   const hasReview = reviews.some((r) => (r.body ?? '').includes(REVIEW_MARKER));
-  return { fingerprints, hasReview };
+  return { fingerprints, lineKeys, hasReview };
 }
 
 export interface ReviewComment {

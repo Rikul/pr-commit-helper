@@ -13,7 +13,9 @@ vi.mock('@actions/core', () => ({
 
 const PATCH = '@@ -1,2 +1,3 @@\n const a = 1;\n+const b = a.foo.bar;\n const c = 2;';
 
-function fakeOctokit(opts: { reviewComments?: unknown[]; reviews?: unknown[]; failFirstReview?: boolean } = {}) {
+function fakeOctokit(
+  opts: { reviewComments?: unknown[]; reviews?: unknown[]; failFirstReview?: boolean; patch?: string } = {},
+) {
   const created: any[] = [];
   let calls = 0;
   const pulls = {
@@ -22,7 +24,7 @@ function fakeOctokit(opts: { reviewComments?: unknown[]; reviews?: unknown[]; fa
     }),
     listFiles: async () => ({
       data: [
-        { filename: 'src/x.ts', status: 'modified', patch: PATCH },
+        { filename: 'src/x.ts', status: 'modified', patch: opts.patch ?? PATCH },
         { filename: 'package-lock.json', status: 'modified', patch: PATCH },
       ],
     }),
@@ -93,6 +95,22 @@ describe('reviewPullRequest', () => {
     const reworded = { ...bug, title: 'a.foo can be undefined here', category: 'reliability', body: 'Different words.' };
     const second = fakeOctokit({ reviewComments: [{ body: posted.comments[0].body }], reviews: [{ body: posted.body }] });
     const res = await reviewPullRequest(cfg(), second.octokit, ref, fakeProvider([reworded]));
+    expect(second.created).toHaveLength(0);
+    expect(res?.findings).toHaveLength(0);
+  });
+
+  it('does not repost when only a neighbouring line changed', async () => {
+    const first = fakeOctokit();
+    await reviewPullRequest(cfg(), first.octokit, ref, fakeProvider([bug]));
+    const posted = first.created[0];
+
+    const edited = '@@ -1,2 +1,3 @@\n const a = 1; // edited\n+const b = a.foo.bar;\n const c = 2;';
+    const second = fakeOctokit({
+      reviewComments: [{ body: posted.comments[0].body }],
+      reviews: [{ body: posted.body }],
+      patch: edited,
+    });
+    const res = await reviewPullRequest(cfg(), second.octokit, ref, fakeProvider([{ ...bug, title: 'Reworded' }]));
     expect(second.created).toHaveLength(0);
     expect(res?.findings).toHaveLength(0);
   });
