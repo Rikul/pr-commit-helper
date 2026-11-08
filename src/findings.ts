@@ -123,7 +123,10 @@ export function placeFindings(findings: Finding[], files: FileDiff[]): PlacedFin
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
 export function fingerprint(path: string, anchor: string): string {
-  return createHash('sha256').update(`${path}\n${norm(anchor)}`).digest('hex').slice(0, 16);
+  // Normalize each line on its own and keep their order, so whitespace
+  // collapsing can't merge the before / cited / after lines into one string.
+  const lines = JSON.stringify(anchor.split('\n').map(norm));
+  return createHash('sha256').update(`${path}\n${lines}`).digest('hex').slice(0, 16);
 }
 
 export function filterBySeverity<T extends { severity: Severity }>(findings: T[], min: Severity): T[] {

@@ -124,6 +124,22 @@ describe('placeFindings', () => {
     expect(dedupe([first!, second!])).toHaveLength(2);
   });
 
+  it('keeps adjacent lines next to blank lines apart', () => {
+    const f: FileDiff = {
+      path: 'b.ts',
+      status: 'added',
+      hunks: parsePatch('@@ -0,0 +1,4 @@\n+\n+unsafeA();\n+unsafeB();\n+'),
+    };
+    const [a, b] = placeFindings(
+      [
+        { ...base, path: 'b.ts', line: 2, title: 'Unsafe call' },
+        { ...base, path: 'b.ts', line: 3, title: 'Unsafe call' },
+      ],
+      [f],
+    );
+    expect(a!.fingerprint).not.toBe(b!.fingerprint);
+  });
+
   it('fingerprints by cited code, not line number', () => {
     const shifted: FileDiff = { ...file, hunks: parsePatch('@@ -10,3 +20,4 @@\n ctx\n+added1\n+added2\n ctx2') };
     const [before] = placeFindings([{ ...base, path: 'src/a.ts', line: 11 }], [file]);
