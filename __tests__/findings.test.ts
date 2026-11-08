@@ -105,6 +105,25 @@ describe('placeFindings', () => {
     expect(a!.fingerprint).toBe(b!.fingerprint);
   });
 
+  it('tells identical lines apart by their neighbours', () => {
+    const repeated: FileDiff = {
+      path: 'r.ts',
+      status: 'added',
+      hunks: parsePatch(
+        '@@ -0,0 +1,7 @@\n+function a() {\n+  cleanup();\n+  return result;\n+}\n+function b() {\n+  return result;\n+}',
+      ),
+    };
+    const [first, second] = placeFindings(
+      [
+        { ...base, path: 'r.ts', line: 3, title: 'Leaks handle' },
+        { ...base, path: 'r.ts', line: 6, title: 'Leaks handle' },
+      ],
+      [repeated],
+    );
+    expect(first!.fingerprint).not.toBe(second!.fingerprint);
+    expect(dedupe([first!, second!])).toHaveLength(2);
+  });
+
   it('fingerprints by cited code, not line number', () => {
     const shifted: FileDiff = { ...file, hunks: parsePatch('@@ -10,3 +20,4 @@\n ctx\n+added1\n+added2\n ctx2') };
     const [before] = placeFindings([{ ...base, path: 'src/a.ts', line: 11 }], [file]);

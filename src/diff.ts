@@ -75,6 +75,17 @@ export function lineText(file: FileDiff, line: number): string | undefined {
   return undefined;
 }
 
+/**
+ * The cited line plus its neighbours (one line above and below in the new
+ * file), as far as the diff shows them. Used to tell identical lines apart,
+ * e.g. two `return result;` in one file.
+ */
+export function lineContext(file: FileDiff, line: number): string | undefined {
+  const at = lineText(file, line);
+  if (at === undefined) return undefined;
+  return [lineText(file, line - 1) ?? '', at, lineText(file, line + 1) ?? ''].join('\n');
+}
+
 /** Index of the hunk containing a new-file line, or -1. */
 export function hunkIndexOf(file: FileDiff, line: number): number {
   return file.hunks.findIndex((h) => h.lines.some((l) => l.newLine === line));

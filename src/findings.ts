@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { SEVERITIES, type Severity, severityRank } from './config';
-import { commentableLines, hunkIndexOf, lineText, type FileDiff } from './diff';
+import { commentableLines, hunkIndexOf, lineContext, type FileDiff } from './diff';
 
 const FindingSchema = z.object({
   path: z.string().min(1),
@@ -112,10 +112,10 @@ export function placeFindings(findings: Finding[], files: FileDiff[]): PlacedFin
     // A suggestion only replaces the exact cited range; if we moved the line, drop it.
     const suggestion = line === f.line && start_line === (f.start_line ?? undefined) ? f.suggestion : undefined;
 
-    // Keyed on where the finding is (file + cited code), not on its wording:
+    // Keyed on where the finding is (file + cited code and its neighbours), not on its wording:
     // models reword titles between runs, and code text survives line shifts.
     // Re-runs use this to skip findings already posted at the same spot.
-    const anchor = lineText(file, line) ?? `L${line}`;
+    const anchor = lineContext(file, line) ?? `L${line}`;
     return { ...f, path, line, start_line, suggestion, inline: true, fingerprint: fingerprint(path, anchor) };
   });
 }
