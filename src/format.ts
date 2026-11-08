@@ -37,10 +37,6 @@ export interface SummaryInput {
   belowThreshold: number;
   skippedFiles: { path: string; reason: string }[];
   errors: string[];
-  model: string;
-  effort: string;
-  inputTokens: number;
-  outputTokens: number;
 }
 
 export function countBySeverity(findings: { severity: Severity }[]): string {
@@ -93,7 +89,6 @@ export function formatSummary(s: SummaryInput): string {
     for (const e of s.errors) lines.push(`> - ${e}`);
   }
 
-  const tokens = s.inputTokens || s.outputTokens ? ` · ${s.inputTokens} in / ${s.outputTokens} out tokens` : '';
-  lines.push('', `<sub>Model: \`${s.model}\` · effort: ${s.effort}${tokens}</sub>`, REVIEW_MARKER);
+  lines.push('', REVIEW_MARKER);
   return lines.join('\n');
 }

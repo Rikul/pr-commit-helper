@@ -62,10 +62,6 @@ describe('format', () => {
       belowThreshold: 0,
       skippedFiles: [{ path: 'yarn.lock', reason: 'excluded' }],
       errors: [],
-      model: 'm',
-      effort: 'medium',
-      inputTokens: 10,
-      outputTokens: 5,
     });
     expect(s).toContain('🟠 1 high · 🔵 1 low');
     expect(s).toContain('2 already reported earlier');
@@ -76,6 +72,7 @@ describe('format', () => {
     expect(s).toContain('  ````\n  if (x) {');
     expect(s).not.toContain('suggestion\n');
     expect(s).toContain('<!-- pr-commit-helper:review -->');
+    expect(s).not.toMatch(/Model:|effort|tokens/);
   });
 
   it('says so when there are no findings', () => {
@@ -87,10 +84,6 @@ describe('format', () => {
       belowThreshold: 0,
       skippedFiles: [],
       errors: [],
-      model: 'm',
-      effort: 'low',
-      inputTokens: 0,
-      outputTokens: 0,
     });
     expect(s).toContain('No new issues found');
   });
