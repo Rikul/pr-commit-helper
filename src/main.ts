@@ -8,6 +8,7 @@ import { formatComment, formatSummary } from './format';
 import {
   createReview,
   getPriorActivity,
+  reactToComment,
   getPull,
   listChangedFiles,
   type Octokit,
@@ -15,6 +16,7 @@ import {
   type ReviewComment,
 } from './github';
 import { createProvider, type LLMProvider } from './llm';
+import { resolveTarget } from './trigger';
 import { FINDINGS_JSON_SCHEMA, systemPrompt, userPrompt } from './prompt';
 
 const CHARS_PER_TOKEN = 4;
@@ -66,9 +68,11 @@ export async function reviewPullRequest(
   octokit: Octokit,
   ref: RepoRef,
   provider: LLMProvider,
+  opts: { onDemand?: boolean } = {},
 ): Promise<ReviewResult | undefined> {
   const pull = await getPull(octokit, ref);
-  if (pull.draft && cfg.skipDraft) {
+  // An explicit /review request reviews drafts too.
+  if (pull.draft && cfg.skipDraft && !opts.onDemand) {
     core.info('PR is a draft; skipping (set skip_draft: false to review drafts).');
     return undefined;
   }
@@ -84,6 +88,20 @@ export async function reviewPullRequest(
   core.info(`Reviewing ${files.length} file(s); skipped ${skipped.length}.`);
   if (!files.length) {
     core.info('No reviewable files in this PR.');
+    // A /review request still gets an answer, saying why there was nothing to review.
+    if (opts.onDemand && !cfg.dryRun) {
+      const body = formatSummary({
+        summaries: ['Nothing to review: this PR has no changed files that can be reviewed.'],
+        posted: [],
+        offDiff: [],
+        alreadyReported: 0,
+        belowThreshold: 0,
+        skippedFiles: skipped,
+        errors: [],
+      });
+      const reviewUrl = await createReview(octokit, ref, { commitId: pull.headSha, body, event: 'COMMENT', comments: [] });
+      return { findings: [], all: [], errors: [], reviewUrl };
+    }
     return { findings: [], all: [], errors: [] };
   }
 
@@ -172,7 +190,8 @@ export async function reviewPullRequest(
     return { findings: fresh, all: placed, errors };
   }
 
-  if (!fresh.length && prior.hasReview && !errors.length) {
+  // Pushes stay quiet when nothing is new; a /review request always gets an answer.
+  if (!fresh.length && prior.hasReview && !errors.length && !opts.onDemand) {
     core.info('No new findings since the last review; not posting another one.');
     return { findings: fresh, all: placed, errors };
   }
@@ -207,18 +226,30 @@ export async function run(): Promise<void> {
     core.setSecret(cfg.apiKey);
 
     const ctx = github.context;
-    const pullNumber = cfg.prNumber ?? ctx.payload.pull_request?.number;
-    if (!pullNumber) {
-      core.notice(
-        `No pull request found for event "${ctx.eventName}". Run on pull_request / pull_request_target, or set pr_number.`,
-      );
+    if (!cfg.githubToken) throw new Error('Input "github_token" is empty.');
+    const octokit = github.getOctokit(cfg.githubToken);
+
+    const target = resolveTarget(ctx.eventName, ctx.payload, {
+      command: cfg.reviewCommand,
+      allowed: cfg.allowedCommenters,
+      prNumber: cfg.prNumber,
+    });
+    if (target.kind === 'skip') {
+      if (target.notice) core.notice(`Not reviewing: ${target.reason}.`);
+      else core.info(`Not reviewing: ${target.reason}.`);
       return;
     }
-    if (!cfg.githubToken) throw new Error('Input "github_token" is empty.');
+    if (target.commentId !== undefined) {
+      try {
+        await reactToComment(octokit, ctx.repo, target.commentId, 'eyes');
+      } catch (err) {
+        // The review matters more than the reaction; it usually fails only on missing permissions.
+        core.warning(`Could not add a reaction to the ${cfg.reviewCommand} comment: ${errorMessage(err)}`);
+      }
+    }
 
-    const octokit = github.getOctokit(cfg.githubToken);
-    const ref: RepoRef = { ...ctx.repo, pull_number: pullNumber };
-    const result = await reviewPullRequest(cfg, octokit, ref, createProvider(cfg));
+    const ref: RepoRef = { ...ctx.repo, pull_number: target.pullNumber };
+    const result = await reviewPullRequest(cfg, octokit, ref, createProvider(cfg), { onDemand: target.onDemand });
     if (!result) return;
 
     core.setOutput('findings_count', result.findings.length);

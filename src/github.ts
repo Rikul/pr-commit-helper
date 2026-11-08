@@ -72,6 +72,16 @@ export async function getPriorActivity(octokit: Octokit, ref: RepoRef): Promise<
   return { fingerprints, lineKeys, hasReview };
 }
 
+/** Adds a reaction to a PR (issue) comment. */
+export async function reactToComment(
+  octokit: Octokit,
+  repo: { owner: string; repo: string },
+  commentId: number,
+  content: 'eyes' | '+1' | 'confused',
+): Promise<void> {
+  await octokit.rest.reactions.createForIssueComment({ ...repo, comment_id: commentId, content });
+}
+
 export interface ReviewComment {
   path: string;
   line: number;

@@ -14,16 +14,23 @@ vi.mock('@actions/core', () => ({
 const PATCH = '@@ -1,2 +1,3 @@\n const a = 1;\n+const b = a.foo.bar;\n const c = 2;';
 
 function fakeOctokit(
-  opts: { reviewComments?: unknown[]; reviews?: unknown[]; failFirstReview?: boolean; patch?: string } = {},
+  opts: {
+    reviewComments?: unknown[];
+    reviews?: unknown[];
+    failFirstReview?: boolean;
+    patch?: string;
+    draft?: boolean;
+    files?: unknown[];
+  } = {},
 ) {
   const created: any[] = [];
   let calls = 0;
   const pulls = {
     get: async () => ({
-      data: { title: 'T', body: 'B', draft: false, head: { sha: 'sha1', ref: 'feat' }, base: { ref: 'main' }, html_url: 'u' },
+      data: { title: 'T', body: 'B', draft: Boolean(opts.draft), head: { sha: 'sha1', ref: 'feat' }, base: { ref: 'main' }, html_url: 'u' },
     }),
     listFiles: async () => ({
-      data: [
+      data: opts.files ?? [
         { filename: 'src/x.ts', status: 'modified', patch: opts.patch ?? PATCH },
         { filename: 'package-lock.json', status: 'modified', patch: PATCH },
       ],
@@ -113,6 +120,43 @@ describe('reviewPullRequest', () => {
     const res = await reviewPullRequest(cfg(), second.octokit, ref, fakeProvider([{ ...bug, title: 'Reworded' }]));
     expect(second.created).toHaveLength(0);
     expect(res?.findings).toHaveLength(0);
+  });
+
+  it('answers a /review request even when nothing is new', async () => {
+    const first = fakeOctokit();
+    await reviewPullRequest(cfg(), first.octokit, ref, fakeProvider([bug]));
+    const posted = first.created[0];
+
+    const second = fakeOctokit({ reviewComments: [{ body: posted.comments[0].body }], reviews: [{ body: posted.body }] });
+    await reviewPullRequest(cfg(), second.octokit, ref, fakeProvider([bug]), { onDemand: true });
+    expect(second.created).toHaveLength(1);
+    expect(second.created[0].comments).toEqual([]);
+    expect(second.created[0].body).toContain('No new issues found');
+    expect(second.created[0].body).toContain('1 already reported earlier');
+  });
+
+  it('replies to /review when every file is skipped', async () => {
+    const lockOnly = fakeOctokit({ files: [{ filename: 'package-lock.json', status: 'modified', patch: PATCH }] });
+    const quiet = await reviewPullRequest(cfg(), lockOnly.octokit, ref, fakeProvider([]));
+    expect(lockOnly.created).toHaveLength(0);
+    expect(quiet?.reviewUrl).toBeUndefined();
+
+    const asked = fakeOctokit({ files: [{ filename: 'package-lock.json', status: 'modified', patch: PATCH }] });
+    const provider = fakeProvider([]);
+    const res = await reviewPullRequest(cfg(), asked.octokit, ref, provider, { onDemand: true });
+    expect(provider.calls).toHaveLength(0);
+    expect(asked.created).toHaveLength(1);
+    expect(asked.created[0].body).toContain('Nothing to review');
+    expect(asked.created[0].body).toContain('package-lock.json');
+    expect(res?.reviewUrl).toBeDefined();
+  });
+
+  it('reviews drafts only when asked with /review', async () => {
+    const auto = fakeOctokit({ draft: true });
+    expect(await reviewPullRequest(cfg(), auto.octokit, ref, fakeProvider([bug]))).toBeUndefined();
+    const asked = fakeOctokit({ draft: true });
+    await reviewPullRequest(cfg(), asked.octokit, ref, fakeProvider([bug]), { onDemand: true });
+    expect(asked.created).toHaveLength(1);
   });
 
   it('requests changes for high findings when configured', async () => {

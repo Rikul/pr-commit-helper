@@ -45,6 +45,53 @@ That's it. The next PR gets a review from `claude-opus-5-5` at `medium` effort.
 
 > If you fork this action into a **private** repository, other repositories can't use it until you allow it: in that repository, open **Settings → Actions → General → Access** and choose "Accessible from repositories owned by the user" (or the organization). Otherwise runs fail with "Unable to resolve action … repository not found".
 
+## Review on demand with `/review`
+
+Comment `/review` on a pull request to get a fresh review at any time, for example after a discussion, or on a draft. The action reacts with 👀 to show it picked the comment up, then posts a review. Unlike automatic runs, a `/review` request always gets a reply, even when there's nothing new.
+
+Only the repository owner and organization members can use it. Every run spends your API credits, and on a public repository anyone can comment. Anyone else's `/review` is ignored, and the job log notes why.
+
+To turn it on, add an `issue_comment` trigger and a job-level `if` to your workflow:
+
+```yaml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request &&
+       contains(fromJSON('["OWNER","MEMBER"]'), github.event.comment.author_association) &&
+       (github.event.comment.body == '/review' ||
+        startsWith(github.event.comment.body, '/review ') ||
+        startsWith(github.event.comment.body, format('/review{0}', fromJSON('"\r"'))) ||
+        startsWith(github.event.comment.body, format('/review{0}', fromJSON('"\n"')))))
+    concurrency:
+      group: pr-review-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Rikul/pr-commit-helper@main
+        with:
+          api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+- **Concurrency at job level:** put the `concurrency` block on the job, not the workflow. At workflow level, every unrelated PR comment would cancel a review in progress.
+- **Default branch:** GitHub runs `issue_comment` workflows from the default branch, so `/review` works once this workflow is merged there.
+- **Two permission checks:** the workflow's `if` and the action both check who commented. To let collaborators on a personal repository use it, add `COLLABORATOR` in both places (`allowed_commenters: OWNER,MEMBER,COLLABORATOR`).
+- **Exact command:** the `if` matches `/review` alone or followed by a space or line break, not `/reviewer`. A near-miss doesn't start a runner, and can't cancel a review in progress.
+- **Rename the command:** use `review_command` to pick another command, and change the four `/review` strings in the `if` to match.
+
+`examples/pr-review.yml` and `examples/pr-review-openrouter.yml` already include this setup.
+
 ## Provider examples
 
 **Anthropic**
@@ -117,6 +164,8 @@ For a complete OpenRouter workflow, see [`examples/pr-review-openrouter.yml`](ex
 | `language` | `English` | Language for review comments. |
 | `skip_draft` | `true` | Don't review draft PRs. Add `ready_for_review` to the triggers to review them once marked ready. |
 | `dry_run` | `false` | Print the review to the job log instead of posting it. |
+| `review_command` | `/review` | PR comment that requests a review (see [Review on demand](#review-on-demand-with-review)). |
+| `allowed_commenters` | `OWNER,MEMBER` | Who may use `review_command`, by GitHub `author_association`. Add `COLLABORATOR` for collaborators on a personal repo. |
 
 ## Outputs
 
