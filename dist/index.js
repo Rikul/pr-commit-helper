@@ -77408,8 +77408,15 @@ function loadConfig(read = actionsInput) {
     customInstructions: read("custom_instructions").trim(),
     language: read("language").trim() || "English",
     skipDraft: bool(read("skip_draft"), true),
-    dryRun: bool(read("dry_run"), false)
+    dryRun: bool(read("dry_run"), false),
+    reviewCommand: reviewCommand(read("review_command")),
+    allowedCommenters: (splitList(read("allowed_commenters")).length ? splitList(read("allowed_commenters")) : ["OWNER", "MEMBER"]).map((s2) => s2.toUpperCase())
   };
+}
+function reviewCommand(value) {
+  const v = value.trim() || "/review";
+  if (/\s/.test(v)) throw new Error(`Input "review_command" must be a single word such as /review (got "${value}").`);
+  return v;
 }
 function severityRank(s2) {
   return SEVERITIES.indexOf(s2);
@@ -99713,6 +99720,9 @@ async function getPriorActivity(octokit, ref) {
   }
   const hasReview = reviews.some((r2) => (r2.body ?? "").includes(REVIEW_MARKER));
   return { fingerprints, lineKeys, hasReview };
+}
+async function reactToComment(octokit, repo, commentId, content) {
+  await octokit.rest.reactions.createForIssueComment({ ...repo, comment_id: commentId, content });
 }
 async function createReview(octokit, ref, review) {
   const { data } = await octokit.rest.pulls.createReview({
@@ -148958,6 +148968,47 @@ function createProvider(cfg) {
   }
 }
 
+// src/trigger.ts
+function isCommand(body, command) {
+  const first = body.split(/\r?\n/, 1)[0].trim().toLowerCase();
+  const cmd = command.trim().toLowerCase();
+  return first === cmd || first.startsWith(`${cmd} `) || first.startsWith(`${cmd}	`);
+}
+function resolveTarget(eventName, payload, opts) {
+  if (eventName === "issue_comment") {
+    const t2 = commentTrigger(payload, opts);
+    if (t2.kind === "ignore") return { kind: "skip", reason: t2.reason, notice: false };
+    if (t2.kind === "denied") return { kind: "skip", reason: t2.reason, notice: true };
+    return { kind: "review", pullNumber: t2.pullNumber, onDemand: true, commentId: t2.commentId };
+  }
+  const pullNumber = opts.prNumber ?? payload.pull_request?.number;
+  if (!pullNumber) {
+    return {
+      kind: "skip",
+      reason: `no pull request found for event "${eventName}". Run on pull_request, pull_request_target or a ${opts.command} comment, or set pr_number`,
+      notice: true
+    };
+  }
+  return { kind: "review", pullNumber, onDemand: false };
+}
+function commentTrigger(payload, opts) {
+  const { action, issue: issue3, comment } = payload;
+  if (action !== "created") return { kind: "ignore", reason: `comment ${action ?? "event"}, not created` };
+  if (!issue3?.pull_request || !issue3.number) return { kind: "ignore", reason: "comment is not on a pull request" };
+  if (!comment?.id || !isCommand(comment.body ?? "", opts.command)) {
+    return { kind: "ignore", reason: `comment does not start with ${opts.command}` };
+  }
+  if (comment.user?.type === "Bot") return { kind: "ignore", reason: "comment was written by a bot" };
+  const association = (comment.author_association ?? "NONE").toUpperCase();
+  if (!opts.allowed.includes(association)) {
+    return {
+      kind: "denied",
+      reason: `${comment.user?.login ?? "commenter"} is ${association}; ${opts.command} is limited to ${opts.allowed.join(", ")}`
+    };
+  }
+  return { kind: "review", pullNumber: issue3.number, commentId: comment.id };
+}
+
 // src/prompt.ts
 var FINDINGS_JSON_SCHEMA = {
   type: "object",
@@ -149068,9 +149119,9 @@ Your previous reply was not valid JSON for the required schema. Reply with only 
   }
   throw new Error(`Could not parse model output: ${errorMessage(lastErr)}`);
 }
-async function reviewPullRequest(cfg, octokit, ref, provider) {
+async function reviewPullRequest(cfg, octokit, ref, provider, opts = {}) {
   const pull = await getPull(octokit, ref);
-  if (pull.draft && cfg.skipDraft) {
+  if (pull.draft && cfg.skipDraft && !opts.onDemand) {
     info("PR is a draft; skipping (set skip_draft: false to review drafts).");
     return void 0;
   }
@@ -149085,6 +149136,19 @@ async function reviewPullRequest(cfg, octokit, ref, provider) {
   info(`Reviewing ${files.length} file(s); skipped ${skipped.length}.`);
   if (!files.length) {
     info("No reviewable files in this PR.");
+    if (opts.onDemand && !cfg.dryRun) {
+      const body = formatSummary({
+        summaries: ["Nothing to review: this PR has no changed files that can be reviewed."],
+        posted: [],
+        offDiff: [],
+        alreadyReported: 0,
+        belowThreshold: 0,
+        skippedFiles: skipped,
+        errors: []
+      });
+      const reviewUrl2 = await createReview(octokit, ref, { commitId: pull.headSha, body, event: "COMMENT", comments: [] });
+      return { findings: [], all: [], errors: [], reviewUrl: reviewUrl2 };
+    }
     return { findings: [], all: [], errors: [] };
   }
   const chunks = chunkDiff(files, cfg.maxDiffTokens * CHARS_PER_TOKEN);
@@ -149162,7 +149226,7 @@ ${formatSummary(summaryInput)}`);
 ${c.body}`);
     return { findings: fresh, all: placed, errors };
   }
-  if (!fresh.length && prior.hasReview && !errors.length) {
+  if (!fresh.length && prior.hasReview && !errors.length && !opts.onDemand) {
     info("No new findings since the last review; not posting another one.");
     return { findings: fresh, all: placed, errors };
   }
@@ -149192,17 +149256,27 @@ async function run() {
     const cfg = loadConfig();
     setSecret(cfg.apiKey);
     const ctx = context2;
-    const pullNumber = cfg.prNumber ?? ctx.payload.pull_request?.number;
-    if (!pullNumber) {
-      notice(
-        `No pull request found for event "${ctx.eventName}". Run on pull_request / pull_request_target, or set pr_number.`
-      );
-      return;
-    }
     if (!cfg.githubToken) throw new Error('Input "github_token" is empty.');
     const octokit = getOctokit(cfg.githubToken);
-    const ref = { ...ctx.repo, pull_number: pullNumber };
-    const result = await reviewPullRequest(cfg, octokit, ref, createProvider(cfg));
+    const target = resolveTarget(ctx.eventName, ctx.payload, {
+      command: cfg.reviewCommand,
+      allowed: cfg.allowedCommenters,
+      prNumber: cfg.prNumber
+    });
+    if (target.kind === "skip") {
+      if (target.notice) notice(`Not reviewing: ${target.reason}.`);
+      else info(`Not reviewing: ${target.reason}.`);
+      return;
+    }
+    if (target.commentId !== void 0) {
+      try {
+        await reactToComment(octokit, ctx.repo, target.commentId, "eyes");
+      } catch (err) {
+        warning(`Could not add a reaction to the ${cfg.reviewCommand} comment: ${errorMessage(err)}`);
+      }
+    }
+    const ref = { ...ctx.repo, pull_number: target.pullNumber };
+    const result = await reviewPullRequest(cfg, octokit, ref, createProvider(cfg), { onDemand: target.onDemand });
     if (!result) return;
     setOutput("findings_count", result.findings.length);
     setOutput("findings_json", JSON.stringify(result.findings));
