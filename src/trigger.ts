@@ -18,6 +18,38 @@ export function isCommand(body: string, command: string): boolean {
   return first === cmd || first.startsWith(`${cmd} `) || first.startsWith(`${cmd}\t`);
 }
 
+export type RunTarget =
+  | { kind: 'review'; pullNumber: number; onDemand: boolean; commentId?: number }
+  | { kind: 'skip'; reason: string; notice: boolean };
+
+/**
+ * Picks the PR to review for this event. Comment events are always checked
+ * against the command and allowed commenters first, even when pr_number is
+ * set, so an explicit PR number can never bypass that check.
+ */
+export function resolveTarget(
+  eventName: string,
+  payload: CommentPayload & { pull_request?: { number?: number } },
+  opts: { command: string; allowed: string[]; prNumber?: number },
+): RunTarget {
+  if (eventName === 'issue_comment') {
+    const t = commentTrigger(payload, opts);
+    if (t.kind === 'ignore') return { kind: 'skip', reason: t.reason, notice: false };
+    if (t.kind === 'denied') return { kind: 'skip', reason: t.reason, notice: true };
+    // The comment says which PR it is on; that wins over any pr_number input.
+    return { kind: 'review', pullNumber: t.pullNumber, onDemand: true, commentId: t.commentId };
+  }
+  const pullNumber = opts.prNumber ?? payload.pull_request?.number;
+  if (!pullNumber) {
+    return {
+      kind: 'skip',
+      reason: `no pull request found for event "${eventName}". Run on pull_request, pull_request_target or a ${opts.command} comment, or set pr_number`,
+      notice: true,
+    };
+  }
+  return { kind: 'review', pullNumber, onDemand: false };
+}
+
 export function commentTrigger(
   payload: CommentPayload,
   opts: { command: string; allowed: string[] },

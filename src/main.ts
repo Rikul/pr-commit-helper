@@ -16,7 +16,7 @@ import {
   type ReviewComment,
 } from './github';
 import { createProvider, type LLMProvider } from './llm';
-import { commentTrigger } from './trigger';
+import { resolveTarget } from './trigger';
 import { FINDINGS_JSON_SCHEMA, systemPrompt, userPrompt } from './prompt';
 
 const CHARS_PER_TOKEN = 4;
@@ -215,36 +215,27 @@ export async function run(): Promise<void> {
     if (!cfg.githubToken) throw new Error('Input "github_token" is empty.');
     const octokit = github.getOctokit(cfg.githubToken);
 
-    let pullNumber = cfg.prNumber ?? ctx.payload.pull_request?.number;
-    let onDemand = false;
-    if (!pullNumber && ctx.eventName === 'issue_comment') {
-      const trigger = commentTrigger(ctx.payload, { command: cfg.reviewCommand, allowed: cfg.allowedCommenters });
-      if (trigger.kind === 'ignore') {
-        core.info(`Not reviewing: ${trigger.reason}.`);
-        return;
-      }
-      if (trigger.kind === 'denied') {
-        core.notice(`Not reviewing: ${trigger.reason}.`);
-        return;
-      }
-      pullNumber = trigger.pullNumber;
-      onDemand = true;
+    const target = resolveTarget(ctx.eventName, ctx.payload, {
+      command: cfg.reviewCommand,
+      allowed: cfg.allowedCommenters,
+      prNumber: cfg.prNumber,
+    });
+    if (target.kind === 'skip') {
+      if (target.notice) core.notice(`Not reviewing: ${target.reason}.`);
+      else core.info(`Not reviewing: ${target.reason}.`);
+      return;
+    }
+    if (target.commentId !== undefined) {
       try {
-        await reactToComment(octokit, ctx.repo, trigger.commentId, 'eyes');
+        await reactToComment(octokit, ctx.repo, target.commentId, 'eyes');
       } catch (err) {
         // The review matters more than the reaction; it usually fails only on missing permissions.
         core.warning(`Could not add a reaction to the ${cfg.reviewCommand} comment: ${errorMessage(err)}`);
       }
     }
-    if (!pullNumber) {
-      core.notice(
-        `No pull request found for event "${ctx.eventName}". Run on pull_request, pull_request_target or a ${cfg.reviewCommand} comment, or set pr_number.`,
-      );
-      return;
-    }
 
-    const ref: RepoRef = { ...ctx.repo, pull_number: pullNumber };
-    const result = await reviewPullRequest(cfg, octokit, ref, createProvider(cfg), { onDemand });
+    const ref: RepoRef = { ...ctx.repo, pull_number: target.pullNumber };
+    const result = await reviewPullRequest(cfg, octokit, ref, createProvider(cfg), { onDemand: target.onDemand });
     if (!result) return;
 
     core.setOutput('findings_count', result.findings.length);

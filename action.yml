@@ -42,7 +42,7 @@ inputs:
     required: false
     default: '${{ github.token }}'
   pr_number:
-    description: 'PR number to review. Only needed for non-pull_request events such as workflow_dispatch.'
+    description: 'PR number to review, for events such as workflow_dispatch. Ignored for issue_comment events, which always review the commented PR after checking the commenter.'
     required: false
     default: ''
   include:

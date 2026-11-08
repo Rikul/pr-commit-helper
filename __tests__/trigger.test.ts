@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commentTrigger, isCommand } from '../src/trigger';
+import { commentTrigger, isCommand, resolveTarget } from '../src/trigger';
 
 const opts = { command: '/review', allowed: ['OWNER', 'MEMBER'] };
 const payload = (over: Record<string, unknown> = {}, comment: Record<string, unknown> = {}) => ({
@@ -40,5 +40,35 @@ describe('commentTrigger', () => {
     expect(commentTrigger(payload({ issue: { number: 7 } }), opts).kind).toBe('ignore');
     expect(commentTrigger(payload({}, { body: 'nice work' }), opts).kind).toBe('ignore');
     expect(commentTrigger(payload({}, { user: { login: 'x[bot]', type: 'Bot' } }), opts).kind).toBe('ignore');
+  });
+});
+
+describe('resolveTarget', () => {
+  it('checks comment events even when pr_number is set', () => {
+    const outsider = payload({}, { author_association: 'NONE' });
+    expect(resolveTarget('issue_comment', outsider, { ...opts, prNumber: 7 })).toMatchObject({ kind: 'skip', notice: true });
+    const chatter = payload({}, { body: 'nice work' });
+    expect(resolveTarget('issue_comment', chatter, { ...opts, prNumber: 7 })).toMatchObject({ kind: 'skip', notice: false });
+    const edited = payload({ action: 'edited' });
+    expect(resolveTarget('issue_comment', edited, { ...opts, prNumber: 7 }).kind).toBe('skip');
+  });
+
+  it('uses the commented PR for an allowed /review, with on-demand behaviour', () => {
+    expect(resolveTarget('issue_comment', payload(), { ...opts, prNumber: 123 })).toEqual({
+      kind: 'review',
+      pullNumber: 7,
+      onDemand: true,
+      commentId: 99,
+    });
+  });
+
+  it('uses the pull_request event or pr_number otherwise', () => {
+    expect(resolveTarget('pull_request', { pull_request: { number: 5 } }, opts)).toEqual({
+      kind: 'review',
+      pullNumber: 5,
+      onDemand: false,
+    });
+    expect(resolveTarget('workflow_dispatch', {}, { ...opts, prNumber: 9 })).toMatchObject({ pullNumber: 9, onDemand: false });
+    expect(resolveTarget('push', {}, opts)).toMatchObject({ kind: 'skip', notice: true });
   });
 });
