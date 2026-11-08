@@ -8,6 +8,7 @@ import { formatComment, formatSummary } from './format';
 import {
   createReview,
   getPriorActivity,
+  reactToComment,
   getPull,
   listChangedFiles,
   type Octokit,
@@ -15,6 +16,7 @@ import {
   type ReviewComment,
 } from './github';
 import { createProvider, type LLMProvider } from './llm';
+import { commentTrigger } from './trigger';
 import { FINDINGS_JSON_SCHEMA, systemPrompt, userPrompt } from './prompt';
 
 const CHARS_PER_TOKEN = 4;
@@ -66,9 +68,11 @@ export async function reviewPullRequest(
   octokit: Octokit,
   ref: RepoRef,
   provider: LLMProvider,
+  opts: { onDemand?: boolean } = {},
 ): Promise<ReviewResult | undefined> {
   const pull = await getPull(octokit, ref);
-  if (pull.draft && cfg.skipDraft) {
+  // An explicit /review request reviews drafts too.
+  if (pull.draft && cfg.skipDraft && !opts.onDemand) {
     core.info('PR is a draft; skipping (set skip_draft: false to review drafts).');
     return undefined;
   }
@@ -172,7 +176,8 @@ export async function reviewPullRequest(
     return { findings: fresh, all: placed, errors };
   }
 
-  if (!fresh.length && prior.hasReview && !errors.length) {
+  // Pushes stay quiet when nothing is new; a /review request always gets an answer.
+  if (!fresh.length && prior.hasReview && !errors.length && !opts.onDemand) {
     core.info('No new findings since the last review; not posting another one.');
     return { findings: fresh, all: placed, errors };
   }
@@ -207,18 +212,39 @@ export async function run(): Promise<void> {
     core.setSecret(cfg.apiKey);
 
     const ctx = github.context;
-    const pullNumber = cfg.prNumber ?? ctx.payload.pull_request?.number;
+    if (!cfg.githubToken) throw new Error('Input "github_token" is empty.');
+    const octokit = github.getOctokit(cfg.githubToken);
+
+    let pullNumber = cfg.prNumber ?? ctx.payload.pull_request?.number;
+    let onDemand = false;
+    if (!pullNumber && ctx.eventName === 'issue_comment') {
+      const trigger = commentTrigger(ctx.payload, { command: cfg.reviewCommand, allowed: cfg.allowedCommenters });
+      if (trigger.kind === 'ignore') {
+        core.info(`Not reviewing: ${trigger.reason}.`);
+        return;
+      }
+      if (trigger.kind === 'denied') {
+        core.notice(`Not reviewing: ${trigger.reason}.`);
+        return;
+      }
+      pullNumber = trigger.pullNumber;
+      onDemand = true;
+      try {
+        await reactToComment(octokit, ctx.repo, trigger.commentId, 'eyes');
+      } catch (err) {
+        // The review matters more than the reaction; it usually fails only on missing permissions.
+        core.warning(`Could not add a reaction to the ${cfg.reviewCommand} comment: ${errorMessage(err)}`);
+      }
+    }
     if (!pullNumber) {
       core.notice(
-        `No pull request found for event "${ctx.eventName}". Run on pull_request / pull_request_target, or set pr_number.`,
+        `No pull request found for event "${ctx.eventName}". Run on pull_request, pull_request_target or a ${cfg.reviewCommand} comment, or set pr_number.`,
       );
       return;
     }
-    if (!cfg.githubToken) throw new Error('Input "github_token" is empty.');
 
-    const octokit = github.getOctokit(cfg.githubToken);
     const ref: RepoRef = { ...ctx.repo, pull_number: pullNumber };
-    const result = await reviewPullRequest(cfg, octokit, ref, createProvider(cfg));
+    const result = await reviewPullRequest(cfg, octokit, ref, createProvider(cfg), { onDemand });
     if (!result) return;
 
     core.setOutput('findings_count', result.findings.length);

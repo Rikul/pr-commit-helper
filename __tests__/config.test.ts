@@ -17,6 +17,8 @@ describe('loadConfig', () => {
       skipDraft: true,
       dryRun: false,
       anthropicFallback: true,
+      reviewCommand: '/review',
+      allowedCommenters: ['OWNER', 'MEMBER'],
     });
     expect(c.exclude).toContain('**/package-lock.json');
   });
@@ -25,6 +27,13 @@ describe('loadConfig', () => {
     expect(() => loadConfig(reader({ api_key: 'k', provider: 'openai' }))).toThrow(/model/);
     expect(() => loadConfig(reader({ api_key: 'k', provider: 'gemini' }))).toThrow(/model/);
     expect(loadConfig(reader({ api_key: 'k', provider: 'OpenAI', model: 'm' })).provider).toBe('openai');
+  });
+
+  it('parses the review command settings', () => {
+    const c = loadConfig(reader({ api_key: 'k', review_command: '/ai-review', allowed_commenters: 'owner, collaborator' }));
+    expect(c.reviewCommand).toBe('/ai-review');
+    expect(c.allowedCommenters).toEqual(['OWNER', 'COLLABORATOR']);
+    expect(() => loadConfig(reader({ api_key: 'k', review_command: '/two words' }))).toThrow(/review_command/);
   });
 
   it('rejects bad values', () => {

@@ -89,6 +89,14 @@ inputs:
     description: 'Print the review to the log instead of posting it.'
     required: false
     default: 'false'
+  review_command:
+    description: 'PR comment that requests a review when the workflow also runs on issue_comment. The comment''s first line must start with it.'
+    required: false
+    default: '/review'
+  allowed_commenters:
+    description: 'Comma-separated author_association values allowed to use review_command, e.g. OWNER, MEMBER, COLLABORATOR.'
+    required: false
+    default: 'OWNER,MEMBER'
 
 outputs:
   findings_count:

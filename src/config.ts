@@ -59,6 +59,10 @@ export interface Config {
   language: string;
   skipDraft: boolean;
   dryRun: boolean;
+  /** PR comment that starts a review on demand, e.g. "/review". */
+  reviewCommand: string;
+  /** author_association values allowed to use the review command. */
+  allowedCommenters: string[];
 }
 
 /** Reads an input. Exposed for tests so they can inject values. */
@@ -156,7 +160,18 @@ export function loadConfig(read: InputReader = actionsInput): Config {
     language: read('language').trim() || 'English',
     skipDraft: bool(read('skip_draft'), true),
     dryRun: bool(read('dry_run'), false),
+    reviewCommand: reviewCommand(read('review_command')),
+    allowedCommenters: (splitList(read('allowed_commenters')).length
+      ? splitList(read('allowed_commenters'))
+      : ['OWNER', 'MEMBER']
+    ).map((s) => s.toUpperCase()),
   };
+}
+
+function reviewCommand(value: string): string {
+  const v = value.trim() || '/review';
+  if (/\s/.test(v)) throw new Error(`Input "review_command" must be a single word such as /review (got "${value}").`);
+  return v;
 }
 
 export function severityRank(s: Severity): number {
