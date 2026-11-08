@@ -129,6 +129,9 @@ export async function reviewPullRequest(
     throw new Error(`The LLM review failed for every part of the diff. ${errors.join('; ')}`);
   }
 
+  // Model, effort and usage go to the job log only, not into the posted review.
+  core.info(`Model: ${model} · effort: ${cfg.effort} · ${inputTokens} in / ${outputTokens} out tokens`);
+
   const placed = dedupe(placeFindings(raw, files));
   const current = filterBySeverity(placed, cfg.minSeverity);
   const prior = await getPriorActivity(octokit, ref);
@@ -150,10 +153,6 @@ export async function reviewPullRequest(
     belowThreshold: placed.length - current.length,
     skippedFiles: skipped,
     errors,
-    model,
-    effort: cfg.effort,
-    inputTokens,
-    outputTokens,
   };
   const wantsChanges =
     cfg.reviewEvent === 'REQUEST_CHANGES' && fresh.some((f) => severityRank(f.severity) >= severityRank('high'));
