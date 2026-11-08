@@ -4103,7 +4103,7 @@ var require_util2 = __commonJS({
     try {
       crypto5 = __require("node:crypto");
       const possibleRelevantHashes = ["sha256", "sha384", "sha512"];
-      supportedHashes = crypto5.getHashes().filter((hash2) => possibleRelevantHashes.includes(hash2));
+      supportedHashes = crypto5.getHashes().filter((hash3) => possibleRelevantHashes.includes(hash3));
     } catch {
     }
     function responseURL(response) {
@@ -25850,14 +25850,14 @@ var require_sha256 = __commonJS({
         })()
       );
       exports2.HMAC = HMAC;
-      function hash2(data) {
+      function hash3(data) {
         var h2 = new Hash().update(data);
         var digest = h2.digest();
         h2.clean();
         return digest;
       }
-      exports2.hash = hash2;
-      exports2["default"] = hash2;
+      exports2.hash = hash3;
+      exports2["default"] = hash3;
       function hmac(key, data) {
         var h2 = new HMAC(key).update(data);
         var digest = h2.digest();
@@ -51238,12 +51238,12 @@ var require_common2 = __commonJS({
       createDebug.skips = [];
       createDebug.formatters = {};
       function selectColor(namespace) {
-        let hash2 = 0;
+        let hash3 = 0;
         for (let i2 = 0; i2 < namespace.length; i2++) {
-          hash2 = (hash2 << 5) - hash2 + namespace.charCodeAt(i2);
-          hash2 |= 0;
+          hash3 = (hash3 << 5) - hash3 + namespace.charCodeAt(i2);
+          hash3 |= 0;
         }
-        return createDebug.colors[Math.abs(hash2) % createDebug.colors.length];
+        return createDebug.colors[Math.abs(hash3) % createDebug.colors.length];
       }
       createDebug.selectColor = selectColor;
       function createDebug(namespace) {
@@ -58038,8 +58038,8 @@ var init_get_search = __esm({
         return parsedURL.search;
       }
       const lastOffset = parsedURL.href.length - 1;
-      const hash2 = parsedURL.hash || (parsedURL.href[lastOffset] === "#" ? "#" : "");
-      return parsedURL.href[lastOffset - hash2.length] === "?" ? "?" : "";
+      const hash3 = parsedURL.hash || (parsedURL.href[lastOffset] === "#" ? "#" : "");
+      return parsedURL.href[lastOffset - hash3.length] === "?" ? "?" : "";
     };
   }
 });
@@ -77457,6 +77457,11 @@ function lineText(file2, line) {
     for (const l of h2.lines) if (l.newLine === line) return l.text;
   }
   return void 0;
+}
+function lineContext(file2, line) {
+  const at = lineText(file2, line);
+  if (at === void 0) return void 0;
+  return [lineText(file2, line - 1) ?? null, at, lineText(file2, line + 1) ?? null];
 }
 function hunkIndexOf(file2, line) {
   return file2.hunks.findIndex((h2) => h2.lines.some((l) => l.newLine === line));
@@ -99524,16 +99529,23 @@ function parseReview(text) {
 var SNAP_DISTANCE = 3;
 function placeFindings(findings, files) {
   const byPath = new Map(files.map((f3) => [f3.path, f3]));
+  const indexes = /* @__PURE__ */ new Map();
+  const indexOf = (file2) => {
+    let idx = indexes.get(file2);
+    if (!idx) indexes.set(file2, idx = indexFile(file2));
+    return idx;
+  };
   return findings.map((f3) => {
     const file2 = byPath.get(f3.path) ?? byPath.get(f3.path.replace(/^\.?\//, ""));
     const path7 = file2?.path ?? f3.path;
-    const offDiff = { ...f3, path: path7, start_line: void 0, inline: false };
-    if (!file2) return { ...offDiff, fingerprint: fingerprint(path7, `L${f3.line}`) };
+    const offKey = hash2(path7, ["off", f3.line]);
+    const offDiff = { ...f3, path: path7, start_line: void 0, inline: false, fingerprint: offKey, lineKey: offKey, lineUnique: false };
+    if (!file2) return offDiff;
     const lines = commentableLines(file2);
     let line = f3.line;
     if (!lines.has(line)) {
       const nearest = [...lines].filter((l) => Math.abs(l - line) <= SNAP_DISTANCE).sort((a, b) => Math.abs(a - line) - Math.abs(b - line))[0];
-      if (nearest === void 0) return { ...offDiff, fingerprint: fingerprint(path7, `L${f3.line}`) };
+      if (nearest === void 0) return offDiff;
       line = nearest;
     }
     let start_line = f3.start_line ?? void 0;
@@ -99541,14 +99553,40 @@ function placeFindings(findings, files) {
       start_line = void 0;
     }
     const suggestion = line === f3.line && start_line === (f3.start_line ?? void 0) ? f3.suggestion : void 0;
-    const anchor2 = lineText(file2, line) ?? `L${line}`;
-    return { ...f3, path: path7, line, start_line, suggestion, inline: true, fingerprint: fingerprint(path7, anchor2) };
+    const keys = indexOf(file2).keys.get(line);
+    return { ...f3, path: path7, line, start_line, suggestion, inline: true, ...keys };
   });
 }
+function indexFile(file2) {
+  const lines = [...commentableLines(file2)].sort((a, b) => a - b);
+  const textCount = /* @__PURE__ */ new Map();
+  const windowSeen = /* @__PURE__ */ new Map();
+  for (const l of lines) {
+    const t2 = norm(lineText(file2, l));
+    textCount.set(t2, (textCount.get(t2) ?? 0) + 1);
+  }
+  const keys = /* @__PURE__ */ new Map();
+  for (const l of lines) {
+    const context4 = lineContext(file2, l).map((p) => p === null ? null : norm(p));
+    const windowId = JSON.stringify(context4);
+    const occurrence = windowSeen.get(windowId) ?? 0;
+    windowSeen.set(windowId, occurrence + 1);
+    const text = context4[1];
+    keys.set(l, {
+      fingerprint: hash2(file2.path, ["ctx", context4, occurrence]),
+      lineKey: hash2(file2.path, ["line", text]),
+      lineUnique: textCount.get(text) === 1
+    });
+  }
+  return { keys };
+}
 var norm = (s2) => s2.toLowerCase().replace(/\s+/g, " ").trim();
-function fingerprint(path7, anchor2) {
+function hash2(path7, parts) {
   return createHash("sha256").update(`${path7}
-${norm(anchor2)}`).digest("hex").slice(0, 16);
+${JSON.stringify(parts)}`).digest("hex").slice(0, 16);
+}
+function alreadyPosted(f3, prior) {
+  return prior.fingerprints.has(f3.fingerprint) || f3.lineUnique && prior.lineKeys.has(f3.lineKey);
 }
 function filterBySeverity(findings, min) {
   return findings.filter((f3) => severityRank(f3.severity) >= severityRank(min));
@@ -99568,10 +99606,13 @@ ${norm(f3.title)}`;
 
 // src/format.ts
 var REVIEW_MARKER = "<!-- pr-commit-helper:review -->";
-var findingMarker = (fp) => `<!-- pr-commit-helper:finding:${fp} -->`;
-var FINDING_MARKER_RE = /<!-- pr-commit-helper:finding:([0-9a-f]+) -->/g;
+var findingMarker = (fp, lineKey) => `<!-- pr-commit-helper:finding:${fp}${lineKey && lineKey !== fp ? `:${lineKey}` : ""} -->`;
+var FINDING_MARKER_RE = /<!-- pr-commit-helper:finding:([0-9a-f]+)(?::([0-9a-f]+))? -->/g;
 function markersIn(text) {
   return [...text.matchAll(FINDING_MARKER_RE)].map((m2) => m2[1]);
+}
+function lineKeysIn(text) {
+  return [...text.matchAll(FINDING_MARKER_RE)].flatMap((m2) => m2[2] ? [m2[2]] : []);
 }
 var ICONS = { critical: "\u{1F534}", high: "\u{1F7E0}", medium: "\u{1F7E1}", low: "\u{1F535}" };
 var cap = (s2) => s2.charAt(0).toUpperCase() + s2.slice(1);
@@ -99586,7 +99627,7 @@ function formatComment(f3) {
     const fe = fence(code);
     parts.push("", `${fe}suggestion`, code, fe);
   }
-  parts.push("", findingMarker(f3.fingerprint));
+  parts.push("", findingMarker(f3.fingerprint, f3.lineKey));
   return parts.join("\n");
 }
 function countBySeverity(findings) {
@@ -99608,7 +99649,7 @@ function formatSummary(s2) {
     lines.push("", "<details><summary>Findings outside the changed lines</summary>", "");
     for (const f3 of s2.offDiff) {
       lines.push(
-        `- ${ICONS[f3.severity]} **${f3.title}** \u2014 \`${f3.path}:${f3.line}\` ${findingMarker(f3.fingerprint)}`,
+        `- ${ICONS[f3.severity]} **${f3.title}** \u2014 \`${f3.path}:${f3.line}\` ${findingMarker(f3.fingerprint, f3.lineKey)}`,
         `  ${f3.body.trim().replace(/\n/g, "\n  ")}`
       );
       if (f3.suggestion !== void 0 && f3.suggestion !== null) {
@@ -99661,10 +99702,17 @@ async function getPriorActivity(octokit, ref) {
     octokit.paginate(octokit.rest.pulls.listReviews, { ...ref, per_page: 100 })
   ]);
   const fingerprints = /* @__PURE__ */ new Set();
-  for (const c of comments) for (const fp of markersIn(c.body ?? "")) fingerprints.add(fp);
-  for (const r2 of reviews) for (const fp of markersIn(r2.body ?? "")) fingerprints.add(fp);
+  const lineKeys = /* @__PURE__ */ new Set();
+  for (const c of comments) {
+    for (const fp of markersIn(c.body ?? "")) fingerprints.add(fp);
+    for (const k of lineKeysIn(c.body ?? "")) lineKeys.add(k);
+  }
+  for (const r2 of reviews) {
+    for (const fp of markersIn(r2.body ?? "")) fingerprints.add(fp);
+    for (const k of lineKeysIn(r2.body ?? "")) lineKeys.add(k);
+  }
   const hasReview = reviews.some((r2) => (r2.body ?? "").includes(REVIEW_MARKER));
-  return { fingerprints, hasReview };
+  return { fingerprints, lineKeys, hasReview };
 }
 async function createReview(octokit, ref, review) {
   const { data } = await octokit.rest.pulls.createReview({
@@ -149082,7 +149130,7 @@ async function reviewPullRequest(cfg, octokit, ref, provider) {
   const placed = dedupe(placeFindings(raw, files));
   const current = filterBySeverity(placed, cfg.minSeverity);
   const prior = await getPriorActivity(octokit, ref);
-  const fresh = current.filter((f3) => !prior.fingerprints.has(f3.fingerprint));
+  const fresh = current.filter((f3) => !alreadyPosted(f3, prior));
   const inline = fresh.filter((f3) => f3.inline);
   const offDiff = fresh.filter((f3) => !f3.inline);
   info(
