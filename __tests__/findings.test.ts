@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parsePatch, type FileDiff } from '../src/diff';
-import { dedupe, extractJson, filterBySeverity, parseReview, placeFindings } from '../src/findings';
+import { alreadyPosted, dedupe, extractJson, filterBySeverity, parseReview, placeFindings } from '../src/findings';
 
 const file: FileDiff = {
   path: 'src/a.ts',
@@ -138,6 +138,55 @@ describe('placeFindings', () => {
       [f],
     );
     expect(a!.fingerprint).not.toBe(b!.fingerprint);
+  });
+
+  it('numbers repeated identical windows so they stay apart', () => {
+    const f: FileDiff = {
+      path: 'w.ts',
+      status: 'added',
+      hunks: parsePatch('@@ -0,0 +1,7 @@\n+before();\n+return result;\n+after();\n+\n+before();\n+return result;\n+after();'),
+    };
+    const [a, b] = placeFindings(
+      [
+        { ...base, path: 'w.ts', line: 2, title: 'X' },
+        { ...base, path: 'w.ts', line: 6, title: 'X' },
+      ],
+      [f],
+    );
+    expect(a!.fingerprint).not.toBe(b!.fingerprint);
+    expect(a!.lineUnique).toBe(false);
+  });
+
+  it('treats a missing neighbour differently from a blank line', () => {
+    const atStart: FileDiff = { path: 'm.ts', status: 'added', hunks: parsePatch('@@ -0,0 +1,2 @@\n+risky();\n+next();') };
+    const afterBlank: FileDiff = { path: 'm.ts', status: 'added', hunks: parsePatch('@@ -0,0 +1,3 @@\n+\n+risky();\n+next();') };
+    const [a] = placeFindings([{ ...base, path: 'm.ts', line: 1 }], [atStart]);
+    const [b] = placeFindings([{ ...base, path: 'm.ts', line: 2 }], [afterBlank]);
+    expect(a!.fingerprint).not.toBe(b!.fingerprint);
+  });
+
+  it('still matches a unique line after a neighbour changed, but not a repeated one', () => {
+    const before: FileDiff = { path: 'n.ts', status: 'added', hunks: parsePatch('@@ -0,0 +1,3 @@\n+a();\n+danger();\n+b();') };
+    const after: FileDiff = { path: 'n.ts', status: 'added', hunks: parsePatch('@@ -0,0 +1,3 @@\n+a2();\n+danger();\n+b();') };
+    const [posted] = placeFindings([{ ...base, path: 'n.ts', line: 2 }], [before]);
+    const [rerun] = placeFindings([{ ...base, path: 'n.ts', line: 2, title: 'Reworded' }], [after]);
+    expect(rerun!.fingerprint).not.toBe(posted!.fingerprint);
+    const prior = { fingerprints: new Set([posted!.fingerprint]), lineKeys: new Set([posted!.lineKey]) };
+    expect(alreadyPosted(rerun!, prior)).toBe(true);
+
+    const repeated: FileDiff = {
+      path: 'n.ts',
+      status: 'added',
+      hunks: parsePatch('@@ -0,0 +1,4 @@\n+a2();\n+danger();\n+b();\n+danger();'),
+    };
+    const [, second] = placeFindings(
+      [
+        { ...base, path: 'n.ts', line: 2 },
+        { ...base, path: 'n.ts', line: 4 },
+      ],
+      [repeated],
+    );
+    expect(alreadyPosted(second!, prior)).toBe(false);
   });
 
   it('fingerprints by cited code, not line number', () => {

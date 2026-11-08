@@ -3,7 +3,7 @@ import * as github from '@actions/github';
 import { type Config, loadConfig, severityRank } from './config';
 import { chunkDiff, type FileDiff, parsePatch } from './diff';
 import { filterFiles } from './filter';
-import { dedupe, filterBySeverity, type Finding, parseReview, placeFindings, type PlacedFinding } from './findings';
+import { alreadyPosted, dedupe, filterBySeverity, type Finding, parseReview, placeFindings, type PlacedFinding } from './findings';
 import { formatComment, formatSummary } from './format';
 import {
   createReview,
@@ -135,7 +135,7 @@ export async function reviewPullRequest(
   const placed = dedupe(placeFindings(raw, files));
   const current = filterBySeverity(placed, cfg.minSeverity);
   const prior = await getPriorActivity(octokit, ref);
-  const fresh = current.filter((f) => !prior.fingerprints.has(f.fingerprint));
+  const fresh = current.filter((f) => !alreadyPosted(f, prior));
   const inline = fresh.filter((f) => f.inline);
   const offDiff = fresh.filter((f) => !f.inline);
   core.info(

@@ -80,10 +80,11 @@ export function lineText(file: FileDiff, line: number): string | undefined {
  * file), as far as the diff shows them. Used to tell identical lines apart,
  * e.g. two `return result;` in one file.
  */
-export function lineContext(file: FileDiff, line: number): string | undefined {
+export function lineContext(file: FileDiff, line: number): (string | null)[] | undefined {
   const at = lineText(file, line);
   if (at === undefined) return undefined;
-  return [lineText(file, line - 1) ?? '', at, lineText(file, line + 1) ?? ''].join('\n');
+  // null = the diff doesn't show that neighbour (edge of a hunk), which is not the same as a blank line.
+  return [lineText(file, line - 1) ?? null, at, lineText(file, line + 1) ?? null];
 }
 
 /** Index of the hunk containing a new-file line, or -1. */

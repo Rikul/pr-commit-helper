@@ -2,11 +2,19 @@ import type { Severity } from './config';
 import type { PlacedFinding } from './findings';
 
 export const REVIEW_MARKER = '<!-- pr-commit-helper:review -->';
-export const findingMarker = (fp: string) => `<!-- pr-commit-helper:finding:${fp} -->`;
-const FINDING_MARKER_RE = /<!-- pr-commit-helper:finding:([0-9a-f]+) -->/g;
+/** Hidden marker on each posted finding: `finding:<fingerprint>:<lineKey>`. Older markers have no lineKey. */
+export const findingMarker = (fp: string, lineKey?: string) =>
+  `<!-- pr-commit-helper:finding:${fp}${lineKey && lineKey !== fp ? `:${lineKey}` : ''} -->`;
+const FINDING_MARKER_RE = /<!-- pr-commit-helper:finding:([0-9a-f]+)(?::([0-9a-f]+))? -->/g;
 
+/** Fingerprints in the markers of a comment or review body. */
 export function markersIn(text: string): string[] {
   return [...text.matchAll(FINDING_MARKER_RE)].map((m) => m[1]!);
+}
+
+/** Line keys in the markers of a comment or review body (newer markers only). */
+export function lineKeysIn(text: string): string[] {
+  return [...text.matchAll(FINDING_MARKER_RE)].flatMap((m) => (m[2] ? [m[2]] : []));
 }
 
 const ICONS: Record<Severity, string> = { critical: '🔴', high: '🟠', medium: '🟡', low: '🔵' };
@@ -25,7 +33,7 @@ export function formatComment(f: PlacedFinding): string {
     const fe = fence(code);
     parts.push('', `${fe}suggestion`, code, fe);
   }
-  parts.push('', findingMarker(f.fingerprint));
+  parts.push('', findingMarker(f.fingerprint, f.lineKey));
   return parts.join('\n');
 }
 
@@ -65,7 +73,7 @@ export function formatSummary(s: SummaryInput): string {
     lines.push('', '<details><summary>Findings outside the changed lines</summary>', '');
     for (const f of s.offDiff) {
       lines.push(
-        `- ${ICONS[f.severity]} **${f.title}** — \`${f.path}:${f.line}\` ${findingMarker(f.fingerprint)}`,
+        `- ${ICONS[f.severity]} **${f.title}** — \`${f.path}:${f.line}\` ${findingMarker(f.fingerprint, f.lineKey)}`,
         `  ${f.body.trim().replace(/\n/g, '\n  ')}`,
       );
       if (f.suggestion !== undefined && f.suggestion !== null) {

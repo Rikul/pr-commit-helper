@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EXCLUDES } from '../src/config';
 import { filterFiles, matchesAny } from '../src/filter';
-import { formatComment, formatSummary, markersIn } from '../src/format';
+import { formatComment, formatSummary, lineKeysIn, markersIn } from '../src/format';
 import type { PlacedFinding } from '../src/findings';
 
 describe('filterFiles', () => {
@@ -43,6 +43,8 @@ const finding: PlacedFinding = {
   suggestion: 'if (x) {\n  ```weird```\n}',
   inline: true,
   fingerprint: 'abc123',
+  lineKey: 'fed987',
+  lineUnique: true,
 };
 
 describe('format', () => {
@@ -51,6 +53,10 @@ describe('format', () => {
     expect(c).toContain('**🟠 High · bug** — Null deref');
     expect(c).toContain('````suggestion');
     expect(markersIn(c)).toEqual(['abc123']);
+    expect(lineKeysIn(c)).toEqual(['fed987']);
+    // Markers written before line keys existed still parse.
+    expect(markersIn('<!-- pr-commit-helper:finding:0a1b -->')).toEqual(['0a1b']);
+    expect(lineKeysIn('<!-- pr-commit-helper:finding:0a1b -->')).toEqual([]);
   });
 
   it('renders the summary with counts, off-diff findings and markers', () => {
