@@ -85,6 +85,18 @@ describe('reviewPullRequest', () => {
     expect(res?.all).toHaveLength(1);
   });
 
+  it('does not repeat a finding the model reworded on a later run', async () => {
+    const first = fakeOctokit();
+    await reviewPullRequest(cfg(), first.octokit, ref, fakeProvider([bug]));
+    const posted = first.created[0];
+
+    const reworded = { ...bug, title: 'a.foo can be undefined here', category: 'reliability', body: 'Different words.' };
+    const second = fakeOctokit({ reviewComments: [{ body: posted.comments[0].body }], reviews: [{ body: posted.body }] });
+    const res = await reviewPullRequest(cfg(), second.octokit, ref, fakeProvider([reworded]));
+    expect(second.created).toHaveLength(0);
+    expect(res?.findings).toHaveLength(0);
+  });
+
   it('requests changes for high findings when configured', async () => {
     const { octokit, created } = fakeOctokit();
     await reviewPullRequest(cfg({ review_event: 'REQUEST_CHANGES' }), octokit, ref, fakeProvider([bug]));

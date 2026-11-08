@@ -94,6 +94,17 @@ describe('placeFindings', () => {
     expect(a!.fingerprint).toBe(b!.fingerprint);
   });
 
+  it('fingerprints by location only, so reworded findings match', () => {
+    const [a, b] = placeFindings(
+      [
+        { ...base, path: 'src/a.ts', line: 11, title: 'lastN returns n+1 items', category: 'bug' },
+        { ...base, path: 'src/a.ts', line: 11, title: 'lastN is off by one', category: 'reliability' },
+      ],
+      [file],
+    );
+    expect(a!.fingerprint).toBe(b!.fingerprint);
+  });
+
   it('fingerprints by cited code, not line number', () => {
     const shifted: FileDiff = { ...file, hunks: parsePatch('@@ -10,3 +20,4 @@\n ctx\n+added1\n+added2\n ctx2') };
     const [before] = placeFindings([{ ...base, path: 'src/a.ts', line: 11 }], [file]);
