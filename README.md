@@ -80,6 +80,8 @@ That's it. The next PR gets a review from `claude-opus-5-5` at `medium` effort.
     model: <model id on that service>
 ```
 
+For a complete OpenRouter workflow, see [`examples/pr-review-openrouter.yml`](examples/pr-review-openrouter.yml).
+
 **Google Gemini**
 
 ```yaml
