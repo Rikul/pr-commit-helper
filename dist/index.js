@@ -99629,8 +99629,7 @@ function formatSummary(s2) {
     lines.push("", "> [!WARNING]", "> Part of the diff could not be reviewed:");
     for (const e2 of s2.errors) lines.push(`> - ${e2}`);
   }
-  const tokens = s2.inputTokens || s2.outputTokens ? ` \xB7 ${s2.inputTokens} in / ${s2.outputTokens} out tokens` : "";
-  lines.push("", `<sub>Model: \`${s2.model}\` \xB7 effort: ${s2.effort}${tokens}</sub>`, REVIEW_MARKER);
+  lines.push("", REVIEW_MARKER);
   return lines.join("\n");
 }
 
@@ -149079,6 +149078,7 @@ async function reviewPullRequest(cfg, octokit, ref, provider) {
   if (errors.length === chunks.length) {
     throw new Error(`The LLM review failed for every part of the diff. ${errors.join("; ")}`);
   }
+  info(`Model: ${model} \xB7 effort: ${cfg.effort} \xB7 ${inputTokens} in / ${outputTokens} out tokens`);
   const placed = dedupe(placeFindings(raw, files));
   const current = filterBySeverity(placed, cfg.minSeverity);
   const prior = await getPriorActivity(octokit, ref);
@@ -149095,11 +149095,7 @@ async function reviewPullRequest(cfg, octokit, ref, provider) {
     alreadyReported: current.length - fresh.length,
     belowThreshold: placed.length - current.length,
     skippedFiles: skipped,
-    errors,
-    model,
-    effort: cfg.effort,
-    inputTokens,
-    outputTokens
+    errors
   };
   const wantsChanges = cfg.reviewEvent === "REQUEST_CHANGES" && fresh.some((f3) => severityRank(f3.severity) >= severityRank("high"));
   const event = wantsChanges ? "REQUEST_CHANGES" : "COMMENT";
