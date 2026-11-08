@@ -69,8 +69,11 @@ jobs:
     if: >-
       github.event_name != 'issue_comment' ||
       (github.event.issue.pull_request &&
-       startsWith(github.event.comment.body, '/review') &&
-       contains(fromJSON('["OWNER","MEMBER"]'), github.event.comment.author_association))
+       contains(fromJSON('["OWNER","MEMBER"]'), github.event.comment.author_association) &&
+       (github.event.comment.body == '/review' ||
+        startsWith(github.event.comment.body, '/review ') ||
+        startsWith(github.event.comment.body, format('/review{0}', fromJSON('"\r"'))) ||
+        startsWith(github.event.comment.body, format('/review{0}', fromJSON('"\n"')))))
     concurrency:
       group: pr-review-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: true
@@ -84,7 +87,8 @@ jobs:
 - **Concurrency at job level:** put the `concurrency` block on the job, not the workflow. At workflow level, every unrelated PR comment would cancel a review in progress.
 - **Default branch:** GitHub runs `issue_comment` workflows from the default branch, so `/review` works once this workflow is merged there.
 - **Two permission checks:** the workflow's `if` and the action both check who commented. To let collaborators on a personal repository use it, add `COLLABORATOR` in both places (`allowed_commenters: OWNER,MEMBER,COLLABORATOR`).
-- **Rename the command:** use `review_command` to pick another command, and change the `startsWith` check to match.
+- **Exact command:** the `if` matches `/review` alone or followed by a space or line break, not `/reviewer`. A near-miss doesn't start a runner, and can't cancel a review in progress.
+- **Rename the command:** use `review_command` to pick another command, and change the four `/review` strings in the `if` to match.
 
 `examples/pr-review.yml` and `examples/pr-review-openrouter.yml` already include this setup.
 

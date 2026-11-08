@@ -13,7 +13,8 @@ interface CommentPayload {
 
 /** True when the comment's first line is the command, alone or followed by whitespace/text. */
 export function isCommand(body: string, command: string): boolean {
-  const first = body.trimStart().split('\n')[0]!.trim().toLowerCase();
+  // Only the literal first line counts: leading blank lines don't move a later line up.
+  const first = body.split(/\r?\n/, 1)[0]!.trim().toLowerCase();
   const cmd = command.trim().toLowerCase();
   return first === cmd || first.startsWith(`${cmd} `) || first.startsWith(`${cmd}\t`);
 }

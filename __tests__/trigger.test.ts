@@ -16,6 +16,9 @@ describe('isCommand', () => {
     expect(isCommand('/reviewer', '/review')).toBe(false);
     expect(isCommand('please /review', '/review')).toBe(false);
     expect(isCommand('looks good\n/review', '/review')).toBe(false);
+    expect(isCommand('\n/review', '/review')).toBe(false);
+    expect(isCommand('\r\n\r\n/review', '/review')).toBe(false);
+    expect(isCommand('/review\r\nplease focus on auth', '/review')).toBe(true);
   });
 });
 

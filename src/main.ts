@@ -88,6 +88,20 @@ export async function reviewPullRequest(
   core.info(`Reviewing ${files.length} file(s); skipped ${skipped.length}.`);
   if (!files.length) {
     core.info('No reviewable files in this PR.');
+    // A /review request still gets an answer, saying why there was nothing to review.
+    if (opts.onDemand && !cfg.dryRun) {
+      const body = formatSummary({
+        summaries: ['Nothing to review: this PR has no changed files that can be reviewed.'],
+        posted: [],
+        offDiff: [],
+        alreadyReported: 0,
+        belowThreshold: 0,
+        skippedFiles: skipped,
+        errors: [],
+      });
+      const reviewUrl = await createReview(octokit, ref, { commitId: pull.headSha, body, event: 'COMMENT', comments: [] });
+      return { findings: [], all: [], errors: [], reviewUrl };
+    }
     return { findings: [], all: [], errors: [] };
   }
 

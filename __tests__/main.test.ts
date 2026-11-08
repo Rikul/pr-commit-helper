@@ -14,7 +14,14 @@ vi.mock('@actions/core', () => ({
 const PATCH = '@@ -1,2 +1,3 @@\n const a = 1;\n+const b = a.foo.bar;\n const c = 2;';
 
 function fakeOctokit(
-  opts: { reviewComments?: unknown[]; reviews?: unknown[]; failFirstReview?: boolean; patch?: string; draft?: boolean } = {},
+  opts: {
+    reviewComments?: unknown[];
+    reviews?: unknown[];
+    failFirstReview?: boolean;
+    patch?: string;
+    draft?: boolean;
+    files?: unknown[];
+  } = {},
 ) {
   const created: any[] = [];
   let calls = 0;
@@ -23,7 +30,7 @@ function fakeOctokit(
       data: { title: 'T', body: 'B', draft: Boolean(opts.draft), head: { sha: 'sha1', ref: 'feat' }, base: { ref: 'main' }, html_url: 'u' },
     }),
     listFiles: async () => ({
-      data: [
+      data: opts.files ?? [
         { filename: 'src/x.ts', status: 'modified', patch: opts.patch ?? PATCH },
         { filename: 'package-lock.json', status: 'modified', patch: PATCH },
       ],
@@ -126,6 +133,22 @@ describe('reviewPullRequest', () => {
     expect(second.created[0].comments).toEqual([]);
     expect(second.created[0].body).toContain('No new issues found');
     expect(second.created[0].body).toContain('1 already reported earlier');
+  });
+
+  it('replies to /review when every file is skipped', async () => {
+    const lockOnly = fakeOctokit({ files: [{ filename: 'package-lock.json', status: 'modified', patch: PATCH }] });
+    const quiet = await reviewPullRequest(cfg(), lockOnly.octokit, ref, fakeProvider([]));
+    expect(lockOnly.created).toHaveLength(0);
+    expect(quiet?.reviewUrl).toBeUndefined();
+
+    const asked = fakeOctokit({ files: [{ filename: 'package-lock.json', status: 'modified', patch: PATCH }] });
+    const provider = fakeProvider([]);
+    const res = await reviewPullRequest(cfg(), asked.octokit, ref, provider, { onDemand: true });
+    expect(provider.calls).toHaveLength(0);
+    expect(asked.created).toHaveLength(1);
+    expect(asked.created[0].body).toContain('Nothing to review');
+    expect(asked.created[0].body).toContain('package-lock.json');
+    expect(res?.reviewUrl).toBeDefined();
   });
 
   it('reviews drafts only when asked with /review', async () => {
